@@ -396,7 +396,7 @@ export function createBridge({ emit, browser, stats, log = () => {} }) {
      * Runs a full Claude Code task in the background (no UI thread) and resolves with its final text.
      * The session is saved, so it shows up in the sidebar and can be opened later.
      */
-    async runHeadless({ prompt, cwd, model, effort, permissionMode = 'acceptEdits', timeoutMs = 30 * 60000, onEvent, resume, dirs, abortController }) {
+    async runHeadless({ prompt, cwd, model, effort, permissionMode = 'acceptEdits', timeoutMs = 30 * 60000, onEvent, resume, dirs, abortController, canUseTool }) {
       const q = query({
         prompt: String(prompt),
         options: {
@@ -408,6 +408,8 @@ export function createBridge({ emit, browser, stats, log = () => {} }) {
           allowDangerouslySkipPermissions: true,
           ...(resume ? { resume } : {}),
           ...(abortController ? { abortController } : {}),
+          // Lets a caller (e.g. the Telegram bot) ask the user before risky tool calls.
+          ...(canUseTool ? { canUseTool } : {}),
           ...(dirs?.length ? { additionalDirectories: dirs } : {}),
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           mcpServers: { ccd_session: sessionToolsServer(), ...(browser ? { 'desk-browser': browser.mcpServer(`headless-${Date.now()}`) } : {}) },
