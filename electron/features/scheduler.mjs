@@ -33,6 +33,25 @@ export function onTelegramConfig(cb) {
   return () => tgListeners.delete(cb);
 }
 
+// Optional inline keyboard under a run's Telegram notification (the remote-control bot provides it
+// while it is listening, e.g. a "Continue here" button that selects the run's chat in the bot).
+let tgNotifyMarkup = null;
+
+/** Registers fn(sessionId) → reply_markup | null; returns an unregister function. */
+export function setTelegramNotifyMarkup(fn) {
+  tgNotifyMarkup = fn;
+  return () => {
+    if (tgNotifyMarkup === fn) tgNotifyMarkup = null;
+  };
+}
+
+// The Telegram bot can mute scheduled-task results (bot Settings -> Notifications).
+let tgNotifyGate = () => true;
+/** Registers a predicate that decides whether task results may be sent to Telegram. */
+export function setTelegramNotifyGate(fn) {
+  tgNotifyGate = typeof fn === 'function' ? fn : () => true;
+}
+
 function tgConfigChanged() {
   const cfg = telegramConfig();
   for (const cb of tgListeners) {
@@ -155,7 +174,7 @@ export function register(ctx) {
     n.show();
   }
 
-  async function sendTelegram(text) {
+  async function sendTelegram(text, replyMarkup = null) {
     const { telegramToken: token, telegramChatId: chatId } = state.settings;
     if (!token) throw new Error(t('scheduler.noToken'));
     if (!chatId) throw new Error(t('scheduler.noChatId'));
@@ -164,7 +183,7 @@ export function register(ctx) {
       res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: clip(text, TG_LIMIT), disable_web_page_preview: true }),
+        body: JSON.stringify({ chat_id: chatId, text: clip(text, TG_LIMIT), disable_web_page_preview: true, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) }),
         signal: AbortSignal.timeout(15000),
       });
     } catch (e) {
@@ -186,9 +205,15 @@ export function register(ctx) {
         console.error('[scheduler] notification failed', e),
       );
     }
-    if (task.notify?.telegram && state.settings.telegramToken && state.settings.telegramChatId) {
+    if (task.notify?.telegram && state.settings.telegramToken && state.settings.telegramChatId && tgNotifyGate()) {
       const head = `${rec.ok ? '✅' : '❌'} ${task.name}`;
-      sendTelegram(`${head}\n\n${rec.text || (rec.ok ? t('scheduler.done') : t('scheduler.error'))}`).catch((e) => console.error('[scheduler] telegram failed', e?.message ?? e));
+      let markup = null;
+      try {
+        markup = rec.sessionId ? (tgNotifyMarkup?.(rec.sessionId) ?? null) : null;
+      } catch {}
+      sendTelegram(`${head}\n\n${rec.text || (rec.ok ? t('scheduler.done') : t('scheduler.error'))}`, markup).catch((e) =>
+        console.error('[scheduler] telegram failed', e?.message ?? e),
+      );
     }
   }
 

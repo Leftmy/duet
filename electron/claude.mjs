@@ -103,6 +103,19 @@ const supportsAdaptiveThinking = (model) => !/haiku/i.test(model || '');
 
 export function createBridge({ emit, browser, stats, log = () => {} }) {
   const threads = new Map();
+  // Main-process listeners of one thread's events (e.g. the Telegram bot following a chat it started).
+  const observers = new Map();
+  const out = (channel, payload) => {
+    emit(channel, payload);
+    const set = observers.get(payload?.threadId);
+    if (set) for (const cb of [...set]) {
+      try {
+        cb(channel, payload);
+      } catch (e) {
+        log('observer error', e);
+      }
+    }
+  };
   const outputFiles = new Set();
   let probeCache = null;
 
@@ -145,7 +158,7 @@ export function createBridge({ emit, browser, stats, log = () => {} }) {
         resolve(result);
       };
       t.pending.set(reqId, { resolve: finish, input, suggestions: opts.suggestions });
-      emit('claude:permission', {
+      out('claude:permission', {
         threadId: t.id,
         reqId,
         toolName,
@@ -163,7 +176,7 @@ export function createBridge({ emit, browser, stats, log = () => {} }) {
         'abort',
         () => {
           finish({ behavior: 'deny', message: 'Aborted' });
-          emit('claude:permission-cancel', { threadId: t.id, reqId });
+          out('claude:permission-cancel', { threadId: t.id, reqId });
         },
         { once: true },
       );
@@ -189,7 +202,8 @@ export function createBridge({ emit, browser, stats, log = () => {} }) {
           if (msg.type === 'system' && msg.subtype === 'task_notification' && msg.output_file) {
             outputFiles.add(path.resolve(msg.output_file).toLowerCase());
           }
-          emit('claude:event', { threadId: t.id, msg });
+          if (msg.type === 'result' && !msg.parent_tool_use_id) t.running = false;
+          out('claude:event', { threadId: t.id, msg });
         }
       } catch (e) {
         error = String(e?.message || e);
@@ -202,7 +216,8 @@ export function createBridge({ emit, browser, stats, log = () => {} }) {
       }
       for (const p of [...t.pending.values()]) p.resolve({ behavior: 'deny', message: 'Session closed' });
       t.pending.clear();
-      emit('claude:closed', { threadId: t.id, error, stderr: error ? t.stderrTail.slice(-1500) : undefined });
+      t.running = false;
+      out('claude:closed', { threadId: t.id, error, stderr: error ? t.stderrTail.slice(-1500) : undefined });
     })();
   }
 
@@ -502,7 +517,50 @@ export function createBridge({ emit, browser, stats, log = () => {} }) {
         start(t);
       }
       t.input.push(userMessage(text, images, uuid, priority));
+      t.running = true;
       return true;
+    },
+
+    /**
+     * Runs a prompt as a regular app chat, so it shows up in the sidebar and streams live in the UI.
+     * The renderer creates/opens the thread and sends the message; follow it with observe(threadId).
+     * resume = session id of an existing chat to continue.
+     */
+    async startVisible({ prompt, cwd, dirs, model, effort, permissionMode, resume, projectId, source = 'external', timeoutMs = 15000 }) {
+      const existing = resume ? [...threads.values()].find((x) => x.sessionId === resume || x.id === resume) : undefined;
+      if (existing?.running) throw new Error(tr('claude.chatBusy'));
+      const threadId = existing?.id ?? resume ?? `ext-${randomUUID()}`;
+      emit('desk:external-run', { threadId, prompt, cwd, dirs, model, effort, permissionMode, resume, projectId, source });
+      // Wait until the renderer actually sent it (the UI may still be loading).
+      // The UI may already show this session under another thread id; accept whichever thread picks it up.
+      const started = Date.now();
+      const find = () =>
+        [...threads.values()].find((x) => x.running && (x.id === threadId || (resume && (x.sessionId === resume || x.resume === resume))));
+      let hit;
+      while (!(hit = find())) {
+        if (Date.now() - started > timeoutMs) throw new Error(tr('claude.uiNotReady'));
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return { threadId: hit.id };
+    },
+
+    /** Subscribe to one thread's claude:event / permission / permission-cancel / closed. Returns unsubscribe. */
+    observe(threadId, cb) {
+      let set = observers.get(threadId);
+      if (!set) observers.set(threadId, (set = new Set()));
+      set.add(cb);
+      return () => {
+        set.delete(cb);
+        if (!set.size) observers.delete(threadId);
+      };
+    },
+
+    isRunning(threadId) {
+      return Boolean(threads.get(threadId)?.running);
+    },
+
+    sessionOf(threadId) {
+      return threads.get(threadId)?.sessionId ?? null;
     },
 
     async configure({ threadId, model, effort, permissionMode }) {
@@ -634,6 +692,8 @@ esumeAt (null = from the very start); the next message continues from there. */
           ...(decision === 'always' && p.suggestions?.length ? { updatedPermissions: p.suggestions } : {}),
         });
       }
+      // Answered somewhere (app or Telegram): drop the request everywhere else.
+      out('claude:permission-cancel', { threadId, reqId });
       return true;
     },
 

@@ -32,6 +32,9 @@ export const getLanguage = () => current;
 export const onLanguage = (cb) => (listeners.add(cb), () => listeners.delete(cb));
 export const locale = () => (current === 'ru' ? 'ru-RU' : 'en-US');
 
+/** Every loaded translation of a key (e.g. to recognize a button label sent before a language switch). */
+export const tAll = (key) => Object.values(dicts).map((d) => d[key]).filter((v) => typeof v === 'string');
+
 /** Translate a key; `{name}` placeholders from params; params.count picks key_one/_few/_many/_other. */
 export function t(key, params) {
   let s;

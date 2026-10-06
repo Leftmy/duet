@@ -8,7 +8,7 @@ const on = (channel) => (cb) => {
 };
 
 // Feature modules talk over namespaced channels through call/subscribe.
-const FEATURE_PREFIXES = ['pr:', 'search:', 'sched:', 'voice:', 'instr:', 'fs:', 'tg:', 'win:', 'cmd:'];
+const FEATURE_PREFIXES = ['pr:', 'search:', 'sched:', 'voice:', 'instr:', 'fs:', 'tg:', 'win:', 'cmd:', 'desk:'];
 const allowed = (ch) => typeof ch === 'string' && FEATURE_PREFIXES.some((p) => ch.startsWith(p));
 
 contextBridge.exposeInMainWorld('desk', {

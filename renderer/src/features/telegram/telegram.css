@@ -91,6 +91,10 @@
 .tg-cmd {
   display: contents;
 }
+.tg-cmd .tg-btn-label {
+  white-space: nowrap;
+  font-weight: 500;
+}
 .tg-cmd code {
   font-family: var(--mono, ui-monospace, monospace);
   white-space: nowrap;

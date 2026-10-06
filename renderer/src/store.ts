@@ -466,6 +466,46 @@ export const useStore = create<State>()((set, get) => {
       });
 
       if (!isDetachedWindow()) {
+        // A prompt from outside the window (Telegram bot): run it as a regular chat so it's visible here.
+        window.desk.subscribe<{
+          threadId: string;
+          prompt: string;
+          cwd?: string;
+          model?: string;
+          effort?: Effort;
+          permissionMode?: PermMode;
+          resume?: string;
+          projectId?: string;
+        }>('desk:external-run', async (r) => {
+          let s = get();
+          let thread =
+            s.threads[r.threadId] ?? (r.resume ? Object.values(s.threads).find((x) => x.sessionId === r.resume) : undefined);
+          if (!thread && r.resume) {
+            const info = s.sessions.find((x) => x.sessionId === r.resume) ?? { sessionId: r.resume, title: tr('common.untitled'), cwd: r.cwd ?? '', lastModified: Date.now() };
+            const active = s.activeId;
+            get().openSession(info);
+            // Opening selects the chat; keep the user's current chat in front.
+            if (s.threads[active]) set({ activeId: active });
+            for (let i = 0; i < 200 && !(get().threads[r.resume]?.loaded); i++) await new Promise((res) => setTimeout(res, 50));
+            thread = get().threads[r.resume];
+          }
+          if (!thread) {
+            s = get();
+            const blank = blankThread(s.settings, r.cwd, r.projectId);
+            thread = { ...blank, id: r.threadId };
+            set({ threads: { ...s.threads, [thread.id]: thread } });
+          }
+          const id = thread.id;
+          update(id, (x) => ({
+            ...x,
+            ...(r.model ? { model: r.model } : {}),
+            ...(r.effort ? { effort: r.effort } : {}),
+            ...(r.permissionMode ? { permissionMode: r.permissionMode } : {}),
+            ...(r.projectId ? { projectId: r.projectId } : {}),
+          }));
+          get().send(id, r.prompt, []);
+        });
+
         window.desk.call<{ key: string }[]>('win:list').then((l) => set({ detached: l.map((w) => w.key) })).catch(() => {});
         window.desk.subscribe<{ threadId: string; sessionId?: string }>('win:detached', ({ threadId, sessionId }) => {
           const s = get();

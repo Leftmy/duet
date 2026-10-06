@@ -9,6 +9,7 @@ import './telegram.css';
 // ---------- types (mirror electron/features/telegram.mjs) ----------
 
 type TgMode = 'ask' | 'edits' | 'full';
+type TgModel = 'default' | 'sonnet' | 'opus' | 'haiku';
 
 export interface TgStatus {
   enabled: boolean;
@@ -20,20 +21,22 @@ export interface TgStatus {
   busySince: number | null;
   botName: string;
   lastError: string;
-  current: { project: string | null; chat: string | null; mode: TgMode };
+  current: { project: string | null; chat: string | null; mode: TgMode; model?: TgModel };
 }
 
 const modeLabel = (m: TgMode) => t(m === 'ask' ? 'telegram.modeAsk' : m === 'edits' ? 'telegram.modeEdits' : 'telegram.modeFull');
+const modelLabel = (m: TgModel | undefined) => t(`telegram.model_${m ?? 'default'}`);
 
-const commands = (): [string, string][] => [
-  ['/projects', t('telegram.cmdProjects')],
-  ['/project 2', t('telegram.cmdProject')],
-  ['/chats', t('telegram.cmdChats')],
-  ['/chat 1', t('telegram.cmdChat')],
-  ['/new', t('telegram.cmdNew')],
-  ['/mode ask|edits|full', t('telegram.cmdMode')],
-  ['/status', t('telegram.cmdStatus')],
-  ['/stop', t('telegram.cmdStop')],
+// The bot's main menu (a keyboard under the input field in Telegram), its in-message buttons and what they do.
+const menuButtons = (): [string, string][] => [
+  [t('telegram.btnProjects'), t('telegram.btnProjectsDesc')],
+  [t('telegram.btnChats'), t('telegram.btnChatsDesc')],
+  [t('telegram.btnNew'), t('telegram.btnNewDesc')],
+  [t('telegram.btnSettings'), t('telegram.btnSettingsDesc')],
+  [t('telegram.btnStatus'), t('telegram.btnStatusDesc')],
+  [t('telegram.btnStop'), t('telegram.btnStopDesc')],
+  [t('telegram.btnAllow'), t('telegram.btnAllowDesc')],
+  [t('telegram.btnFiles'), t('telegram.btnFilesDesc')],
 ];
 
 const errText = (e: any) => String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
@@ -117,6 +120,7 @@ export function TelegramControl() {
             project: st.current.project ?? t('telegram.projectNone'),
             chat: st.current.chat ? t('telegram.chatQuoted', { title: st.current.chat }) : t('telegram.chatNew'),
             mode: modeLabel(st.current.mode),
+            model: modelLabel(st.current.model),
           })}
         </div>
       )}
@@ -133,13 +137,14 @@ export function TelegramControl() {
         <div className="tg-ctl-help small">
           <p className="muted">{t('telegram.helpText')}</p>
           <div className="tg-cmds">
-            {commands().map(([c, d]) => (
-              <div key={c} className="tg-cmd">
-                <code>{c}</code>
-                <span className="muted">{d}</span>
+            {menuButtons().map(([label, desc]) => (
+              <div key={label} className="tg-cmd">
+                <span className="tg-btn-label">{label}</span>
+                <span className="muted">{desc}</span>
               </div>
             ))}
           </div>
+          <p className="muted">{t('telegram.helpCommands')}</p>
         </div>
       )}
     </div>
