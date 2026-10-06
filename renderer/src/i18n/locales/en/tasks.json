@@ -1,0 +1,12 @@
+{
+  "steps_one": "{count} step",
+  "steps_other": "{count} steps",
+  "output": "Output",
+  "stopTask": "Stop task",
+  "stop": "Stop",
+  "openOutputFile": "Open output file",
+  "title": "Background tasks",
+  "running_one": "{count} running",
+  "running_other": "{count} running",
+  "allDone": "all finished"
+}

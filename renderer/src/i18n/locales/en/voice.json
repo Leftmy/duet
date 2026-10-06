@@ -1,0 +1,20 @@
+{
+  "webgpuUnavailable": "WebGPU is unavailable",
+  "workerCrashed": "Speech recognition module crashed",
+  "micDenied": "No microphone access — allow it in Windows settings (Privacy → Microphone)",
+  "micNotFound": "Microphone not found",
+  "micBusy": "The microphone is in use by another app",
+  "micError": "Microphone error: {error}",
+  "mb": "{n} MB",
+  "silence": "Couldn't hear anything — try again",
+  "nothingRecognized": "No speech recognized",
+  "transcribeFailed": "Couldn't recognize speech: {error}",
+  "unsupported": "Audio recording is not supported",
+  "modelLoadFailed": "Couldn't load the speech recognition model: {error}",
+  "recordError": "Audio recording error",
+  "stop": "Stop recording",
+  "transcribing": "Recognizing speech…",
+  "start": "Voice input (Ctrl+M)",
+  "downloading": "Downloading speech recognition model… {pct}%",
+  "downloadProgress": "{loaded} of {total} · downloaded once, then works offline"
+}

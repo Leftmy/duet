@@ -1,0 +1,21 @@
+{
+  "error": "Ошибка поиска: {error}",
+  "introTitle": "Поиск по сообщениям во всех чатах и проектах",
+  "introHint": "Слова ищутся вместе: найдутся сообщения, где есть каждое из них",
+  "noResults": "Ничего не найдено",
+  "noResultsHint": "Попробуйте другие слова или меньше слов",
+  "you": "Вы",
+  "placeholder": "Поиск по всем чатам…",
+  "indexing": "Индексирую историю… {done} / {total}",
+  "select": "выбрать",
+  "open": "открыть",
+  "footCount": "{matches} в {chats}",
+  "matches_one": "{count} совпадение",
+  "matches_few": "{count} совпадения",
+  "matches_many": "{count} совпадений",
+  "matches_other": "{count} совпадений",
+  "chats_one": "{count} чате",
+  "chats_few": "{count} чатах",
+  "chats_many": "{count} чатах",
+  "chats_other": "{count} чатах"
+}

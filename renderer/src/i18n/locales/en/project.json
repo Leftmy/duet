@@ -1,0 +1,23 @@
+{
+  "created": "Project “{name}” created",
+  "settingsTitle": "Project settings",
+  "createTitle": "Create project",
+  "namePlaceholder": "Project name",
+  "sourceFolders": "Source folders",
+  "primaryHint": "New project chats start in this folder",
+  "primary": "primary",
+  "makePrimary": "Make primary — new chats will start here",
+  "removeFolder": "Remove folder",
+  "addFolderHint": "Add a folder on this computer",
+  "addAnotherFolder": "Add another folder",
+  "multiFolderHint": "Claude can read and edit files in all of these folders. Chats start in the primary one.",
+  "newChatDefaults": "New chat defaults",
+  "defaultsSet": "set",
+  "model": "Model",
+  "asInSettings": "Same as global settings",
+  "effort": "Reasoning effort",
+  "permissions": "Permissions",
+  "workMode": "Where to work",
+  "local": "Locally",
+  "worktree": "In a separate worktree"
+}

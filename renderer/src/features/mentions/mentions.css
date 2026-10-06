@@ -1,0 +1,64 @@
+/* @-mention popup: positioned/styled by .slash-menu, these only tune the rows. */
+.mention-menu {
+  max-height: 340px;
+}
+.mention-item {
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  min-width: 0;
+}
+.mention-item:hover:not(.is-active) {
+  background: transparent;
+}
+.mention-icon {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.mention-item.is-active .mention-icon {
+  color: var(--text-2);
+}
+.mention-name {
+  flex-shrink: 0;
+  max-width: 60%;
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mention-dir {
+  min-width: 0;
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mention-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+/* Drop overlay on the composer while files are dragged over it. */
+.mention-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--bg-elev) 82%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+}

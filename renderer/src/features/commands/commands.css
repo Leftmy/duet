@@ -1,0 +1,148 @@
+/* ---------- settings: custom slash commands & skills (layout/list/editor reuse instructions.css) ---------- */
+.cmds code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.cmds .set-head-row {
+  gap: 4px;
+}
+.cmd-layout .instr-list {
+  max-height: 452px;
+}
+.cmd-item {
+  align-items: flex-start;
+}
+.cmd-item > svg {
+  margin-top: 2px;
+}
+.cmd-item-name {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.cmd-editor.is-short {
+  height: 170px;
+}
+.cmd-editor:not(.is-short) {
+  height: 330px;
+}
+.cmd-empty {
+  flex-direction: column;
+  gap: 8px;
+  height: 200px;
+}
+
+/* new command form */
+.cmd-form {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+.cmd-form-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+}
+.cmd-form-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cmd-templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cmd-templates .pill {
+  background: var(--bg-hover);
+}
+.cmd-templates .pill.is-on {
+  background: var(--bg-active);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.cmd-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.cmd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.cmd-field > span:first-child {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cmd-field .input {
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+.cmd-field .select {
+  width: 100%;
+}
+.cmd-name-input {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.cmd-name-prefix {
+  position: absolute;
+  left: 8px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.cmd-name-input .input {
+  padding-left: 18px;
+  font-family: var(--mono);
+}
+.cmd-name-input.is-bad .input {
+  border-color: var(--danger);
+}
+.cmd-form .instr-error {
+  margin-top: -3px;
+  font-family: inherit;
+}
+.cmd-form-hint {
+  line-height: 1.4;
+}
+
+/* toolbar */
+.cmd-rename {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 2px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.cmd-del:hover {
+  color: var(--danger);
+}
+
+/* "/" menu preview */
+.cmd-preview {
+  margin-top: 8px;
+}
+.cmd-preview-label {
+  margin: 0 0 4px 2px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.cmd-preview-menu {
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+}
+.cmd-preview-menu .slash-item {
+  cursor: default;
+}
+.cmd-preview-usage {
+  margin: 4px 0 0 2px;
+}

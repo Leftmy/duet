@@ -1,0 +1,14 @@
+{
+  "saveFailed": "Couldn't save: {error}",
+  "binary": "Binary file",
+  "tooLarge": "File is larger than 4 MB",
+  "closeUnsavedTitle": "Close without saving?",
+  "closeUnsavedMessage": "“{name}” has unsaved changes — they will be lost.",
+  "hideTree": "Hide tree",
+  "showTree": "Show tree",
+  "saveHint": "Save (Ctrl+S)",
+  "staleBanner": "The file changed on disk, and you have unsaved changes.",
+  "reloadFromDisk": "Reload from disk",
+  "noProject": "This chat has no project selected",
+  "empty": "Select a file in the tree or click a file in the chat"
+}

@@ -1,0 +1,9 @@
+{
+  "exited": "process exited with code {code}",
+  "title": "Terminal",
+  "outputHeader": "Terminal output:",
+  "newTerminal": "New terminal",
+  "toChatHint": "Selection or the last lines — into the chat input",
+  "toChat": "To chat",
+  "openTerminal": "Open terminal"
+}

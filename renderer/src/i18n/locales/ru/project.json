@@ -1,0 +1,23 @@
+{
+  "created": "Проект «{name}» создан",
+  "settingsTitle": "Настройки проекта",
+  "createTitle": "Создать проект",
+  "namePlaceholder": "Название проекта",
+  "sourceFolders": "Исходные папки",
+  "primaryHint": "Новые чаты проекта запускаются в этой папке",
+  "primary": "основная",
+  "makePrimary": "Сделать основной — новые чаты будут запускаться в ней",
+  "removeFolder": "Убрать папку",
+  "addFolderHint": "Добавить папку на этом компьютере",
+  "addAnotherFolder": "Добавить ещё папку",
+  "multiFolderHint": "Claude сможет читать и править файлы во всех этих папках. Чаты запускаются в основной.",
+  "newChatDefaults": "Параметры новых чатов",
+  "defaultsSet": "заданы",
+  "model": "Модель",
+  "asInSettings": "Как в общих настройках",
+  "effort": "Сила размышлений",
+  "permissions": "Разрешения",
+  "workMode": "Где работать",
+  "local": "Локально",
+  "worktree": "В отдельном worktree"
+}

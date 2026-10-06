@@ -1,0 +1,15 @@
+{
+  "doc.globalInstructions": "Инструкции для всех проектов",
+  "doc.userSettings": "Настройки и хуки (пользователь)",
+  "doc.projectInstructions": "Инструкции проекта",
+  "doc.projectLocalInstructions": "Личные инструкции проекта",
+  "doc.projectSettings": "Настройки проекта",
+  "doc.projectLocalSettings": "Локальные настройки проекта",
+  "doc.memoryIndex": "MEMORY.md (оглавление)",
+  "notAllowed": "Этот файл нельзя открыть в редакторе инструкций",
+  "notAFile": "Это не файл",
+  "tooLarge": "Файл больше 2 МБ",
+  "invalidJson": "Неверный JSON: {error} (строка {line})",
+  "emptyContent": "Пустое содержимое",
+  "hooksInvalidJson": "Файл содержит неверный JSON"
+}

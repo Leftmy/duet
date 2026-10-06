@@ -1,0 +1,16 @@
+{
+  "notFound": "Chat not found",
+  "empty": "Start the conversation first — an empty chat can't be opened in a separate window",
+  "emptyReturn": "Start the conversation first — an empty chat can't be returned to the main window",
+  "busy": "Wait for Claude to finish responding, then the chat can be opened in a separate window",
+  "busyReturn": "Wait for Claude to finish responding, then the chat can be returned to the main window",
+  "tasksRunning": "Background tasks are running in this chat — wait for them to finish or stop them",
+  "agentsRunning": "Agents are running in this chat — wait for them to finish",
+  "openFailed": "Couldn't open the window: {error}",
+  "closeTitle": "Close the window?",
+  "closeMessage": "Claude is still working in this chat — the current response and background tasks will be stopped.",
+  "noChat": "The window was opened without a chat",
+  "returnToMain": "Return to the main window",
+  "opening": "Opening chat…",
+  "probeError": "Couldn't start Claude Code: {error}. Make sure you're signed in (`claude` → /login)."
+}

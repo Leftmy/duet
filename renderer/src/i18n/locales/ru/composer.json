@@ -1,0 +1,17 @@
+{
+  "reviewComments_one": "{count} комментарий к коду",
+  "reviewComments_few": "{count} комментария к коду",
+  "reviewComments_many": "{count} комментариев к коду",
+  "reviewComments_other": "{count} комментария к коду",
+  "clear": "Очистить",
+  "sendToClaude": "Отправить Claude",
+  "image": "Изображение",
+  "queued": "в очереди",
+  "dropFiles": "Отпустите, чтобы добавить файлы",
+  "placeholderSteer": "Уточните — Claude учтёт это на следующем шаге, не прерываясь",
+  "placeholderQueue": "Следующее сообщение — уйдёт, когда Claude закончит",
+  "placeholder": "Поручите что угодно",
+  "attachImage": "Прикрепить изображение",
+  "stop": "Остановить (Esc)",
+  "send": "Отправить (Enter)"
+}

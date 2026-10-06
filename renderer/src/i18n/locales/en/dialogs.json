@@ -1,0 +1,18 @@
+{
+  "rewindBoth": "Conversation and code",
+  "rewindBothHint": "Remove this message and everything after it, and restore files to how they were before it",
+  "rewindConversation": "Conversation only",
+  "rewindConversationHint": "Files stay as they are; the message goes back to the input box so you can edit and resend it",
+  "rewindCode": "Code only",
+  "rewindCodeHint": "The conversation stays; files go back to their state before this message",
+  "checkingFiles": "Checking which files changed…",
+  "noSnapshot": "There is no file snapshot for this message",
+  "cannotRewindCode": "Can't rewind code: {reason}",
+  "noSnapshotReason": "no file snapshot for this message",
+  "noFileChanges": "Claude didn't change any files via Edit/Write after this message — there's no code to rewind",
+  "rewindTitle": "Rewind to this message",
+  "image": "Image",
+  "filesWillRevert": "Files will be restored",
+  "andMore": "and {n} more",
+  "rewind": "Rewind"
+}

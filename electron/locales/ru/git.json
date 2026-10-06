@@ -1,0 +1,8 @@
+{
+  "emptyMessage": "Пустое сообщение коммита",
+  "noFiles": "Не выбраны файлы",
+  "badBranch": "Недопустимое имя ветки",
+  "notActiveWorktree": "Это не активный worktree Claude Desk",
+  "notWorktree": "Это не worktree Claude Desk",
+  "folderBusy": "Папка занята другим процессом: {path}"
+}

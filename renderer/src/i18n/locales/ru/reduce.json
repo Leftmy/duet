@@ -1,0 +1,20 @@
+{
+  "task": "Задача",
+  "agent": "Агент",
+  "assignment": "Задание",
+  "report": "Отчёт",
+  "message": "Сообщение",
+  "compacting": "Сжимаю контекст…",
+  "retrying": "Повтор запроса {attempt}/{max}…",
+  "compacted": "Контекст сжат",
+  "bgTaskCompleted": "Фоновая задача «{name}» завершена",
+  "bgTaskFailed": "Фоновая задача «{name}» завершилась с ошибкой",
+  "bgTaskStopped": "Фоновая задача «{name}» остановлена",
+  "bgTaskDone": "Фоновая задача завершена",
+  "errRateLimit": "Достигнут лимит подписки",
+  "errAuth": "Ошибка авторизации — войдите в Claude Code заново",
+  "errBilling": "Проблема с оплатой подписки",
+  "errOverloaded": "Серверы перегружены, повторите позже",
+  "errGeneric": "Ошибка: {code}",
+  "interrupted": "Прервано пользователем"
+}

@@ -1,0 +1,20 @@
+{
+  "task": "Task",
+  "agent": "Agent",
+  "assignment": "Task",
+  "report": "Report",
+  "message": "Message",
+  "compacting": "Compacting context…",
+  "retrying": "Retrying request {attempt}/{max}…",
+  "compacted": "Context compacted",
+  "bgTaskCompleted": "Background task “{name}” completed",
+  "bgTaskFailed": "Background task “{name}” failed",
+  "bgTaskStopped": "Background task “{name}” stopped",
+  "bgTaskDone": "Background task completed",
+  "errRateLimit": "Subscription limit reached",
+  "errAuth": "Authentication failed — sign in to Claude Code again",
+  "errBilling": "Subscription billing problem",
+  "errOverloaded": "Servers are overloaded, try again later",
+  "errGeneric": "Error: {code}",
+  "interrupted": "Interrupted by user"
+}

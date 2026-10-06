@@ -1,0 +1,17 @@
+{
+  "error": "Search error: {error}",
+  "introTitle": "Search messages across all chats and projects",
+  "introHint": "Words are matched together: results contain every one of them",
+  "noResults": "Nothing found",
+  "noResultsHint": "Try different or fewer words",
+  "you": "You",
+  "placeholder": "Search all chats…",
+  "indexing": "Indexing history… {done} / {total}",
+  "select": "select",
+  "open": "open",
+  "footCount": "{matches} in {chats}",
+  "matches_one": "{count} match",
+  "matches_other": "{count} matches",
+  "chats_one": "{count} chat",
+  "chats_other": "{count} chats"
+}

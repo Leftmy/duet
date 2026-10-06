@@ -1,0 +1,21 @@
+{
+  "agent": "Agent",
+  "agentPrefix": "Agent",
+  "running": "is working",
+  "failed": "failed",
+  "stopped": "stopped",
+  "done": "finished",
+  "startFailed": "Couldn't start agent “{name}”",
+  "steps_one": "{count} step",
+  "steps_other": "{count} steps",
+  "openConversation": "Open conversation with the agent",
+  "background": "background",
+  "messageSentTo": "Message sent to",
+  "messageSentFallback": "agent",
+  "showFull": "Show all",
+  "stop": "Stop",
+  "loadingTranscript": "Loading conversation…",
+  "working": "Working",
+  "result": "Result",
+  "empty": "Claude hasn't started any agents in this chat yet"
+}

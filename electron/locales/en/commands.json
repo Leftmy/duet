@@ -1,0 +1,22 @@
+{
+  "nameRequired": "Enter a name",
+  "skillNameColon": "Skill names can’t contain “:”",
+  "tooDeep": "Too many nesting levels",
+  "nameChars": "Name: lowercase Latin letters, digits, “-”, “_”, and “:” for subfolders only (up to 64 characters per part)",
+  "nameReserved": "The name “skill” is reserved",
+  "badProjectFolder": "Invalid project folder",
+  "badPath": "Invalid path",
+  "outsideRoots": "File is outside the commands and skills folders",
+  "notFound": "File not found",
+  "notFoundDeleted": "File not found. It may have been deleted.",
+  "notAFile": "Not a file",
+  "tooLargeRead": "File is larger than 1 MB",
+  "tooLarge": "File is too large",
+  "badScope": "Invalid scope",
+  "badKind": "Invalid type",
+  "projectIsHome": "The project is your home folder. Use the global scope.",
+  "noProject": "No project selected",
+  "emptyContent": "Empty content",
+  "skillExists": "Skill “{name}” already exists",
+  "commandExists": "Command “/{name}” already exists"
+}

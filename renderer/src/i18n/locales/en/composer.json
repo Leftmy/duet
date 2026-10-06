@@ -1,0 +1,15 @@
+{
+  "reviewComments_one": "{count} code comment",
+  "reviewComments_other": "{count} code comments",
+  "clear": "Clear",
+  "sendToClaude": "Send to Claude",
+  "image": "Image",
+  "queued": "queued",
+  "dropFiles": "Drop to add files",
+  "placeholderSteer": "Add a note — Claude will pick it up at the next step without stopping",
+  "placeholderQueue": "Next message — sent when Claude finishes",
+  "placeholder": "Ask Claude anything",
+  "attachImage": "Attach image",
+  "stop": "Stop (Esc)",
+  "send": "Send (Enter)"
+}

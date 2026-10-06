@@ -1,0 +1,23 @@
+{
+  "agent": "Агент",
+  "agentPrefix": "Агент",
+  "running": "работает",
+  "failed": "завершил работу с ошибкой",
+  "stopped": "остановлен",
+  "done": "завершил работу",
+  "startFailed": "Не удалось запустить агента «{name}»",
+  "steps_one": "{count} шаг.",
+  "steps_few": "{count} шаг.",
+  "steps_many": "{count} шаг.",
+  "steps_other": "{count} шаг.",
+  "openConversation": "Открыть переписку с агентом",
+  "background": "фон",
+  "messageSentTo": "Сообщение отправлено агенту",
+  "messageSentFallback": "агенту",
+  "showFull": "Показать полностью",
+  "stop": "Стоп",
+  "loadingTranscript": "Загружаю переписку…",
+  "working": "Работает",
+  "result": "Результат",
+  "empty": "В этом чате Claude ещё не запускал агентов"
+}

@@ -1,0 +1,16 @@
+{
+  "thinking": "Thinking",
+  "thoughtFor": "Thought for {time}",
+  "thoughts": "Thoughts",
+  "steerDelivered": "Follow-up — Claude took it into account while working",
+  "steerPending": "Follow-up — Claude will take it into account at the next step",
+  "workedFor": "Worked for {time}",
+  "stepsDone_one": "Completed {count} step",
+  "stepsDone_other": "Completed {count} steps",
+  "stopped": "Stopped",
+  "forkHere": "Fork chat from here — a new conversation branch from this reply",
+  "summaryTitle": "Continued conversation — summary of the previous part",
+  "rewindHere": "Rewind to this message — the conversation, the code, or both",
+  "fileNotFound": "File not found: {path}",
+  "image": "image"
+}

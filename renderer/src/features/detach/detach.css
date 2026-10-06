@@ -1,0 +1,16 @@
+/* ---------- detached chat window ---------- */
+.detached-app .titlebar {
+  padding-left: 14px;
+}
+.detached-app .titlebar-name {
+  min-width: 0;
+  max-width: 60%;
+}
+.detached-wait {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+}

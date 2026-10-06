@@ -1,0 +1,225 @@
+/* ---------- global chat search ---------- */
+.search-backdrop {
+  place-items: start center;
+}
+.search-modal {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(620px, calc(100vh - 120px));
+  margin-top: 11vh;
+  display: flex;
+  flex-direction: column;
+}
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  padding: 2px 0;
+}
+.search-input::placeholder {
+  color: var(--text-3);
+}
+.search-kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+}
+.search-spin {
+  animation: search-spin 0.9s linear infinite;
+  color: var(--text-2);
+}
+@keyframes search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.search-progress {
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.search-progress-bar {
+  margin-top: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.search-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.search-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+}
+.search-skeleton {
+  padding: 4px 10px;
+}
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 42px 20px;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+.search-empty svg {
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+
+.search-group + .search-group {
+  margin-top: 6px;
+}
+.search-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 4px;
+  font-size: 12px;
+}
+.search-group-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.search-group-proj {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 1;
+  max-width: 40%;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+  font-size: 11px;
+}
+.search-group-proj svg {
+  flex-shrink: 0;
+}
+.search-group-time {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.search-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+.search-hit.is-sel {
+  background: var(--bg-active);
+  color: var(--text);
+}
+.search-role {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: -1px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+.search-role.assistant {
+  color: var(--warn);
+}
+.search-snippet {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.search-snippet mark {
+  background: rgba(77, 142, 247, 0.28);
+  color: var(--text);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+.search-enter {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--text-3);
+}
+
+.search-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.search-foot kbd {
+  display: inline-block;
+  min-width: 16px;
+  margin-right: 3px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  text-align: center;
+}
+.search-foot-count {
+  margin-left: auto;
+}
+
+/* Temporary highlight on the message opened from search. */
+.search-flash {
+  animation: search-flash 1.8s ease-out;
+  border-radius: 12px;
+  /* Old entries use content-visibility (paint containment), so the ring is drawn inside. */
+  content-visibility: visible !important;
+}
+@keyframes search-flash {
+  0%,
+  30% {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background-color: rgba(77, 142, 247, 0.08);
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px transparent;
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .search-spin {
+    animation: none;
+  }
+}

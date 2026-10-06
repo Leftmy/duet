@@ -1,0 +1,18 @@
+{
+  "thinking": "Думаю",
+  "thoughtFor": "Думал {time}",
+  "thoughts": "Размышления",
+  "steerDelivered": "Уточнение — Claude учёл его по ходу работы",
+  "steerPending": "Уточнение — Claude учтёт на следующем шаге",
+  "workedFor": "Работа на протяжении {time}",
+  "stepsDone_one": "Выполнено шагов: {count}",
+  "stepsDone_few": "Выполнено шагов: {count}",
+  "stepsDone_many": "Выполнено шагов: {count}",
+  "stepsDone_other": "Выполнено шагов: {count}",
+  "stopped": "Остановлено",
+  "forkHere": "Ответвить чат отсюда — новая ветка разговора с этого ответа",
+  "summaryTitle": "Продолжение разговора — сводка предыдущей части",
+  "rewindHere": "Откатить к этому сообщению — переписку, код или всё вместе",
+  "fileNotFound": "Файл не найден: {path}",
+  "image": "изображение"
+}

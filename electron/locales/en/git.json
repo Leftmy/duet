@@ -1,0 +1,8 @@
+{
+  "emptyMessage": "Commit message is empty",
+  "noFiles": "No files selected",
+  "badBranch": "Invalid branch name",
+  "notActiveWorktree": "This is not an active Claude Desk worktree",
+  "notWorktree": "This is not a Claude Desk worktree",
+  "folderBusy": "Folder is in use by another process: {path}"
+}

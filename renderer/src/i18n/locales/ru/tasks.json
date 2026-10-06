@@ -1,0 +1,16 @@
+{
+  "steps_one": "{count} шаг.",
+  "steps_few": "{count} шаг.",
+  "steps_many": "{count} шаг.",
+  "steps_other": "{count} шаг.",
+  "output": "Вывод",
+  "stopTask": "Остановить задачу",
+  "stop": "Стоп",
+  "openOutputFile": "Открыть файл вывода",
+  "title": "Фоновые задачи",
+  "running_one": "{count} выполняется",
+  "running_few": "{count} выполняются",
+  "running_many": "{count} выполняются",
+  "running_other": "{count} выполняется",
+  "allDone": "все завершены"
+}
