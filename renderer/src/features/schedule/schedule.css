@@ -309,3 +309,10 @@ button.sched-state:hover {
   align-items: center;
   gap: 8px;
 }
+
+.sched-tg-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+}

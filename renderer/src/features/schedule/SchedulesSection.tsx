@@ -268,7 +268,34 @@ export function SchedulesSection() {
         </div>
       )}
 
-      {data && <TelegramBlock settings={data.settings} />}
+      <p className="muted small sched-tg-hint">
+        <Send size={12} /> {t('schedule.tgMovedHint')}
+      </p>
+    </div>
+  );
+}
+
+/** Settings → Telegram: bot token, chat id, test message and remote control. */
+export function TelegramSection() {
+  const toast = useStore((s) => s.toast);
+  const [settings, setSettings] = useState<SchedState['settings'] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    window.desk
+      .call<SchedState>('sched:list')
+      .then((d) => alive && setSettings(d.settings))
+      .catch((e) => toast(errText(e), 'error'));
+    const off = window.desk.subscribe<SchedState>('sched:update', (d) => setSettings(d.settings));
+    return () => {
+      alive = false;
+      off();
+    };
+  }, []);
+  return (
+    <div className="sched">
+      <h2>Telegram</h2>
+      <p className="muted small">{t('schedule.tgSectionIntro')}</p>
+      {settings && <TelegramBlock settings={settings} />}
     </div>
   );
 }
@@ -645,7 +672,7 @@ function TelegramBlock({ settings }: { settings: SchedState['settings'] }) {
 
   return (
     <>
-      <h3>Telegram</h3>
+      <h3>{t('schedule.tgBotTitle')}</h3>
       <ol className="sched-howto muted small">
         <li>{withLink(t('schedule.tgHowto1'), <a onClick={() => window.desk.openExternal('https://t.me/BotFather')}>@BotFather</a>)}</li>
         <li>{t('schedule.tgHowto2')}</li>

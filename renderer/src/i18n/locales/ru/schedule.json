@@ -76,5 +76,8 @@
   "removeTokenMessage": "Уведомления в Telegram перестанут приходить, управление из Telegram отключится.",
   "tokenRemoved": "Токен удалён",
   "removeToken": "Удалить токен",
-  "test": "Проверить"
+  "test": "Проверить",
+  "tgMovedHint": "Уведомления в Telegram и управление из Telegram настраиваются в разделе Настройки → Telegram.",
+  "tgSectionIntro": "Подключите своего бота, чтобы получать результаты задач по расписанию и управлять Claude Desk с телефона.",
+  "tgBotTitle": "Бот"
 }

@@ -76,5 +76,8 @@
   "removeTokenMessage": "Telegram notifications will stop and Telegram remote control will be turned off.",
   "tokenRemoved": "Token removed",
   "removeToken": "Remove token",
-  "test": "Test"
+  "test": "Test",
+  "tgMovedHint": "Telegram notifications and remote control are set up in Settings → Telegram.",
+  "tgSectionIntro": "Connect your own bot to get results of scheduled tasks and to control Claude Desk from your phone.",
+  "tgBotTitle": "Bot"
 }

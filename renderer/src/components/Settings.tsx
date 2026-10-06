@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { BarChart3, CalendarClock, Info, ScrollText, SquareSlash, Wand2, Keyboard, Monitor, Moon, Plug, SlidersHorizontal, Sparkles, Sun, User, X } from 'lucide-react';
+import { BarChart3, CalendarClock, Info, ScrollText, SquareSlash, Wand2, Keyboard, Monitor, Moon, Plug, SlidersHorizontal, Sparkles, Sun, User, X, Send } from 'lucide-react';
 import { InstructionsSection } from '../features/instructions/InstructionsSection';
 import { CommandsSection } from '../features/commands/CommandsSection';
-import { SchedulesSection } from '../features/schedule/SchedulesSection';
+import { SchedulesSection, TelegramSection } from '../features/schedule/SchedulesSection';
 import { useStore } from '../store';
 import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel } from '../lib/format';
 import type { Effort, PermMode, ThemePref } from '../types';
@@ -11,7 +11,7 @@ import { spring } from './Popover';
 import { LANGS, t, type Lang } from '../i18n';
 import { AboutSection, McpManager, SkillsList, StatsView } from './SettingsExtra';
 
-type Section = 'general' | 'defaults' | 'claude' | 'instr' | 'commands' | 'mcp' | 'skills' | 'schedule' | 'stats' | 'keys' | 'about';
+type Section = 'general' | 'defaults' | 'claude' | 'instr' | 'commands' | 'mcp' | 'skills' | 'schedule' | 'telegram' | 'stats' | 'keys' | 'about';
 
 const SECTIONS: { id: Section; label: string; icon: typeof User }[] = [
   { id: 'general', get label() { return t('settings.nav_general'); }, icon: SlidersHorizontal },
@@ -22,6 +22,7 @@ const SECTIONS: { id: Section; label: string; icon: typeof User }[] = [
   { id: 'mcp', get label() { return t('settings.nav_mcp'); }, icon: Plug },
   { id: 'skills', get label() { return t('settings.nav_skills'); }, icon: Wand2 },
   { id: 'schedule', get label() { return t('settings.nav_schedule'); }, icon: CalendarClock },
+  { id: 'telegram', get label() { return 'Telegram'; }, icon: Send },
   { id: 'stats', get label() { return t('settings.nav_stats'); }, icon: BarChart3 },
   { id: 'keys', get label() { return t('settings.nav_keys'); }, icon: Keyboard },
   { id: 'about', get label() { return t('settings.nav_about'); }, icon: Info },
@@ -262,6 +263,7 @@ export function SettingsModal() {
                   {section === 'instr' && <InstructionsSection />}
                   {section === 'commands' && <CommandsSection />}
                   {section === 'schedule' && <SchedulesSection />}
+                  {section === 'telegram' && <TelegramSection />}
                   {section === 'stats' && <StatsView />}
                   {section === 'about' && <AboutSection />}
                   {section === 'keys' && (
