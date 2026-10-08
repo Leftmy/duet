@@ -52,7 +52,7 @@
   "hint.actions": "actions",
   "hint.projects": "projects",
   "hint.chats": "chats",
-  "running": "Claude is responding",
+  "running": "The agent is responding",
   "current": "current",
   "foot.select": "select",
   "foot.open": "open",

@@ -17,5 +17,5 @@
   "loadingTranscript": "Loading conversation…",
   "working": "Working",
   "result": "Result",
-  "empty": "Claude hasn't started any agents in this chat yet"
+  "empty": "No agents have been started in this chat yet"
 }

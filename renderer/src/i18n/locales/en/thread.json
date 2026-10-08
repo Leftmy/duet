@@ -20,7 +20,7 @@
   "deleteChatTitle": "Delete chat?",
   "deleteChatMessage": "The history of this chat will be permanently deleted.",
   "heroTitle": "What should we build?",
-  "pickFolderHint": "Choose a project folder so Claude can work with your code",
+  "pickFolderHint": "Choose a project folder so the agent can work with your code",
   "showEarlierPart": "Show the previous part of the conversation",
   "partsLeft": "{n} more",
   "loadAll": "load all",

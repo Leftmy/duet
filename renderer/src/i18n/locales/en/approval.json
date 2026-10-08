@@ -8,7 +8,7 @@
   "askAgent": "Allow starting an agent?",
   "askMcp": "Allow {server} · {tool}?",
   "askTool": "Allow {name}?",
-  "question": "Claude has a question",
+  "question": "The agent has a question",
   "otherAnswer": "Your own answer…",
   "skip": "Skip",
   "answer": "Answer",

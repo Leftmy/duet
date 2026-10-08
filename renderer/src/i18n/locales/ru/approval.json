@@ -8,7 +8,7 @@
   "askAgent": "Разрешить запустить агента?",
   "askMcp": "Разрешить {server} · {tool}?",
   "askTool": "Разрешить {name}?",
-  "question": "Claude задаёт вопрос",
+  "question": "Агент задаёт вопрос",
   "otherAnswer": "Свой вариант…",
   "skip": "Пропустить",
   "answer": "Ответить",
