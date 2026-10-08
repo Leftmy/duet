@@ -3,6 +3,7 @@ import type {
   Account,
   Approval,
   Effort,
+  Entry,
   ImageAttachment,
   ModelInfo,
   PermMode,
@@ -131,6 +132,8 @@ interface State {
   setModel(id: string, model: string): void;
   /** Moves a chat to another agent; the conversation so far goes with the next message. */
   switchProvider(id: string, provider: ProviderId): void;
+  /** Pulls in what was added to the chat's session elsewhere (another window, the agent's CLI or app). */
+  syncThread(id: string, manual?: boolean): Promise<void>;
   setEffort(id: string, effort: Effort): void;
   setPermissionMode(id: string, mode: PermMode): void;
   setCwd(id: string, cwd: string): void;
@@ -267,6 +270,33 @@ function usageFromLimits(ev: any): UsageSummary {
 /** Models of an agent (Claude's come from the main probe). */
 export const modelsOf = (s: { models: ModelInfo[]; providers: Record<string, ProviderProbe> }, provider: ProviderId): ModelInfo[] =>
   provider === 'claude' ? s.models : (s.providers[provider]?.models as ModelInfo[]) ?? [];
+
+/**
+ * Merges a freshly read session into the feed: everything after the last user message both have is
+ * taken from disk. null when the disk has nothing new; reset = the feed had to be replaced as a whole.
+ */
+function mergeFromDisk(cur: Entry[], fresh: Entry[], allowReset: boolean): { entries: Entry[]; reset?: boolean } | null {
+  const lastText = (list: Entry[], from = list.length - 1) => {
+    for (let i = from; i >= 0; i--) {
+      const e = list[i];
+      if (e.kind === 'user' && e.text.trim()) return i;
+    }
+    return -1;
+  };
+  const iu = lastText(cur);
+  const text = iu >= 0 ? (cur[iu] as Extract<Entry, { kind: 'user' }>).text.trim() : null;
+  let ju = -1;
+  if (text != null) for (let i = fresh.length - 1; i >= 0 && ju < 0; i--) if (fresh[i].kind === 'user' && (fresh[i] as any).text.trim() === text) ju = i;
+  if (ju < 0) {
+    const users = (l: Entry[]) => l.filter((e) => e.kind === 'user').length;
+    return allowReset && users(fresh) > 0 && JSON.stringify(fresh.map((e) => e.kind)) !== JSON.stringify(cur.map((e) => e.kind)) ? { entries: fresh, reset: true } : null;
+  }
+  const curTail = cur.slice(iu + 1);
+  const freshTail = fresh.slice(ju + 1);
+  const size = (l: Entry[]) => l.reduce((n, e) => n + (e.kind === 'turn' ? e.items.filter((x) => x.kind !== 'notice').length : 1), 0);
+  if (!freshTail.some((e) => e.kind === 'user') && size(freshTail) <= size(curTail)) return null;
+  return { entries: [...cur.slice(0, iu + 1), ...freshTail] };
+}
 
 let sessionsTimer: ReturnType<typeof setTimeout> | undefined;
 let lastUsageAt = 0;
@@ -625,6 +655,11 @@ export const useStore = create<State>()((set, get) => {
         });
         window.desk.subscribe<SessionInfo>('win:open', (info) => get().openSession(info));
       }
+      // A session this window shows was continued elsewhere.
+      window.desk.subscribe<{ threadId: string; sessionId: string }>('desk:session-changed', ({ threadId, sessionId }) => {
+        const t = get().threads[threadId] ?? Object.values(get().threads).find((x) => x.sessionId === sessionId);
+        if (t) get().syncThread(t.id);
+      });
 
       get().refreshSessions();
       try {
@@ -806,6 +841,34 @@ export const useStore = create<State>()((set, get) => {
       update(id, (x) => ({ ...x, effort }));
       rememberModel(t?.provider ?? 'claude', { model: t?.model ?? 'default', effort });
       window.desk.configure({ threadId: id, effort }).catch((e) => get().toast(String(e?.message ?? e), 'error'));
+    },
+
+    async syncThread(id, manual = false) {
+      const t = get().threads[id];
+      if (!t?.sessionId || !t.loaded || t.loading) return;
+      if (t.status === 'running') {
+        if (manual) get().toast(tr('store.syncBusy'), 'error');
+        return;
+      }
+      try {
+        const events = await window.desk.loadSession(t.sessionId, t.cwd, undefined, t.provider);
+        const { entries: fresh, agents } = fromHistory(events, t.provider);
+        const cur = get().threads[id];
+        if (!cur || cur.status === 'running' || cur.sessionId !== t.sessionId) return;
+        // A chat that went through several agents only takes additions, never a wholesale replace (unless asked).
+        const multiAgent = cur.entries.some((e) => e.kind === 'turn' && e.provider && e.provider !== cur.provider);
+        const merged = mergeFromDisk(cur.entries, fresh, manual || !multiAgent);
+        if (!merged) {
+          if (manual) get().toast(tr('store.syncNothing'));
+          return;
+        }
+        update(id, (x) => ({ ...x, entries: merged.entries, agents: { ...x.agents, ...agents }, ...(merged.reset ? { chainLoaded: 0 } : {}) }));
+        // The agent's live process doesn't know these turns: the next message resumes from disk.
+        window.desk.call('desk:release', id).catch(() => {});
+        get().toast(tr('store.synced'));
+      } catch (e: any) {
+        if (manual) get().toast(tr('store.historyFailed', { error: e?.message ?? e }), 'error');
+      }
     },
 
     switchProvider(id, provider) {
@@ -1219,6 +1282,24 @@ useStore.subscribe((s, prev) => {
     next[slot < 0 ? 1 : slot] = s.activeId;
     useStore.setState({ split: next[0] === next[1] ? null : next });
   }
+});
+
+// Tell the main process which sessions this window shows, so it can notice them changing elsewhere.
+const WINDOW_KEY = crypto.randomUUID();
+let watchedKey = '';
+let watchTimer: ReturnType<typeof setTimeout> | undefined;
+useStore.subscribe((s, prev) => {
+  if (s.threads === prev.threads) return;
+  clearTimeout(watchTimer);
+  watchTimer = setTimeout(() => {
+    const list = Object.values(useStore.getState().threads)
+      .filter((t) => t.sessionId && t.loaded)
+      .map((t) => ({ threadId: t.id, sessionId: t.sessionId!, provider: t.provider, cwd: t.cwd }));
+    const key = JSON.stringify(list);
+    if (key === watchedKey) return;
+    watchedKey = key;
+    window.desk.call('desk:watch', WINDOW_KEY, list).catch(() => {});
+  }, 600);
 });
 
 export const projectName = (cwd: string) => basename(cwd) || cwd || tr('common.noProject');

@@ -192,5 +192,8 @@
   "forbidden": "Бот заблокирован или не может писать в этот чат",
   "apiError": "Telegram ответил ошибкой: {error}",
   "noToken": "Не указан токен бота",
-  "network": "Нет связи с Telegram: {error}"
+  "network": "Нет связи с Telegram: {error}",
+  "ctxAgent": "🤖 Агент: {value}",
+  "agentHint": "Новые чаты запускаются с этим агентом, выбранный чат продолжает свой.",
+  "toastAgent": "Агент: {label}"
 }

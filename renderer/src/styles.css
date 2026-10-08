@@ -3043,8 +3043,11 @@ kbd.key {
   padding: 5px 11px;
   border-radius: 8px;
   border: 1px solid var(--border);
+  background: transparent;
   color: var(--text-2);
+  font: inherit;
   font-size: 12.5px;
+  cursor: pointer;
 }
 .agent-tab.is-active {
   border-color: var(--border-strong);

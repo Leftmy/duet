@@ -14,7 +14,7 @@ export function AgentTabs({ value, onChange }: { value: ProviderId; onChange: (p
   return (
     <div className="agent-tabs">
       {ids.map((id) => (
-        <button key={id} className={`agent-tab ${id === value ? 'is-active' : ''}`} disabled={!providers[id].available} onClick={() => onChange(id)}>
+        <button type="button" key={id} className={`agent-tab ${id === value ? 'is-active' : ''}`} disabled={!providers[id].available} onClick={() => onChange(id)}>
           <AgentMark provider={id} size={14} />
           {providers[id].label}
         </button>

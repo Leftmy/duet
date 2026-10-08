@@ -229,13 +229,14 @@ export function register(ctx) {
     try {
       if (task.cwd && !fs.existsSync(task.cwd)) throw new Error(t('scheduler.folderNotFound', { path: task.cwd }));
       const r = await ctx.core.runHeadless({
+        provider: task.provider || 'claude',
         prompt: task.prompt,
         cwd: task.cwd || os.homedir(),
         model: task.model && task.model !== 'default' ? task.model : undefined,
         effort: task.effort || undefined,
         permissionMode: task.permissionMode || 'acceptEdits',
       });
-      rec = { ts: started, ok: !r.isError, durationMs: r.durationMs || Date.now() - started, text: clip(r.text, TEXT_LIMIT), sessionId: r.sessionId ?? null };
+      rec = { ts: started, ok: !r.isError, durationMs: r.durationMs || Date.now() - started, text: clip(r.text, TEXT_LIMIT), sessionId: r.sessionId ?? null, provider: task.provider || 'claude' };
       if (r.costUsd) rec.costUsd = r.costUsd;
     } catch (e) {
       rec = { ts: started, ok: false, durationMs: Date.now() - started, text: clip(t('scheduler.errorPrefix') + (e?.message ?? e), TEXT_LIMIT), sessionId: null };
@@ -294,6 +295,8 @@ export function register(ctx) {
       name: clip(name, 120),
       prompt,
       cwd,
+      // Agent that runs the task (Claude when unset or unknown).
+      provider: ctx.core.registry.has(input.provider) ? input.provider : 'claude',
       model: String(input.model || 'default'),
       effort,
       permissionMode,

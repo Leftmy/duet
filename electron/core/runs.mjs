@@ -83,6 +83,7 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
       {
         event(ev) {
           if (t.run !== run) return;
+          t.lastEventAt = Date.now();
           if (ev.type === 'session') t.sessionId = ev.sessionId;
           if (ev.type === 'turn.end') t.running = false;
           // Plan limits are per agent; say whose they are.
@@ -212,6 +213,30 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
       }
       t.run.send({ text, images, uuid, priority });
       t.running = true;
+      t.lastEventAt = Date.now();
+      return true;
+    },
+
+    /** When this app last worked on a chat or session (Infinity while it runs); for telling own writes from others'. */
+    activity(threadId, sessionId) {
+      let last = 0;
+      for (const t of threads.values()) {
+        if (t.id !== threadId && t.sessionId !== sessionId && t.resume !== sessionId) continue;
+        if (t.running) return Infinity;
+        last = Math.max(last, t.lastEventAt ?? 0);
+      }
+      return last;
+    },
+
+    /**
+     * Lets go of a chat's agent process but keeps the chat: the next message resumes the session from disk.
+     * Used when the session was continued elsewhere and the live process no longer knows the latest turns.
+     */
+    release(threadId) {
+      const t = threads.get(threadId);
+      if (!t?.run || t.running) return false;
+      t.resume = t.sessionId || t.resume;
+      stop(t);
       return true;
     },
 

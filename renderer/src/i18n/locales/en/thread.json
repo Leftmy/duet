@@ -29,5 +29,7 @@
   "contextPct": "Context: {pct}%",
   "context": "Context",
   "compact": "Compact context",
-  "compactHint": "Claude will summarize the history and free up space"
+  "compactHint": "Claude will summarize the history and free up space",
+  "syncChat": "Sync",
+  "syncChatHint": "Pull in messages added in another window, the CLI or the agent’s own app"
 }

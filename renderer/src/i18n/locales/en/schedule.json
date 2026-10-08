@@ -79,5 +79,6 @@
   "test": "Test",
   "tgMovedHint": "Telegram notifications and remote control are set up in Settings → Telegram.",
   "tgSectionIntro": "Connect your own bot to get results of scheduled tasks and to control Duet from your phone.",
-  "tgBotTitle": "Bot"
+  "tgBotTitle": "Bot",
+  "agent": "Agent"
 }

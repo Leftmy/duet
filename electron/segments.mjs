@@ -9,7 +9,8 @@ import path from 'node:path';
 const projectsDir = path.join(os.homedir(), '.claude', 'projects');
 const encode = (cwd) => cwd.replace(/[^A-Za-z0-9]/g, '-');
 
-function findFile(sessionId, cwd) {
+/** The session's .jsonl file, or null. */
+export function findFile(sessionId, cwd) {
   const name = `${sessionId}.jsonl`;
   if (cwd) {
     const p = path.join(projectsDir, encode(cwd), name);

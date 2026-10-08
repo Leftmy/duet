@@ -16,6 +16,7 @@ import { setLanguage, t } from './i18n.mjs';
 import { createBrowser } from './browser.mjs';
 import { sessionToolset } from './session-tools.mjs';
 import { agentsToolset } from './core/agents.mjs';
+import { createSessionWatch } from './core/watch.mjs';
 import {
   gitBranches,
   gitCheckout,
@@ -284,6 +285,10 @@ handle('app:gitPull', (root) => gitPull(root));
 handle('app:gitDiscard', (root, file, untracked) => gitDiscard(root, file, untracked));
 handle('app:gitBranches', (root) => gitBranches(root));
 handle('app:gitCheckout', (root, branch, create) => gitCheckout(root, branch, create));
+// Open chats follow their sessions on disk (continued in another window, the CLI or the agent's own app).
+const sessionWatch = createSessionWatch({ registry, emit, activity: (id, sid) => core.activity(id, sid), log: (...a) => console.log('[watch]', ...a) });
+handle('desk:watch', (key, list) => sessionWatch.set(key, list));
+handle('desk:release', (threadId) => core.release(threadId));
 // Skills an agent offers in a folder (agents whose skills aren't in the probe's command list).
 handle('desk:skills', (provider, cwd) => registry.get(provider).skills?.(cwd) ?? []);
 // Condenses the older part of a conversation handed over to another agent.

@@ -365,7 +365,12 @@ export function register(ctx) {
 
   // Persisted: on/off, getUpdates offset (per bot), selection, permission mode, model, notifications,
   // chats-list scope and a hash of the last applied bot profile (commands, menu button, descriptions).
-  let st = { enabled: false, offset: 0, botId: '', project: null, chat: null, mode: 'edits', model: 'default', notify: true, chatsScope: 'project', profileHash: '' };
+  let st = { enabled: false, offset: 0, botId: '', project: null, chat: null, mode: 'edits', agent: 'claude', model: 'default', notify: true, chatsScope: 'project', profileHash: '' };
+  /** Agents the bot can start new chats with. */
+  const agents = () => ctx.core.registry.all().map((p) => ({ id: p.id, label: p.label }));
+  const agentLabel = (id) => agents().find((a) => a.id === id)?.label ?? id;
+  /** The agent the next task runs with: the selected chat's own, else the chosen one. */
+  const taskAgent = () => st.chat?.provider ?? (ctx.core.registry.has(st.agent) ? st.agent : 'claude');
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
     st = {
@@ -373,8 +378,11 @@ export function register(ctx) {
       offset: Number.isInteger(raw?.offset) ? raw.offset : 0,
       botId: String(raw?.botId ?? ''),
       project: raw?.project?.id ? { id: String(raw.project.id) } : raw?.project?.folder ? { folder: String(raw.project.folder) } : null,
-      chat: raw?.chat?.sessionId ? { sessionId: String(raw.chat.sessionId), title: String(raw.chat.title ?? ''), cwd: String(raw.chat.cwd ?? '') } : null,
+      chat: raw?.chat?.sessionId
+        ? { sessionId: String(raw.chat.sessionId), title: String(raw.chat.title ?? ''), cwd: String(raw.chat.cwd ?? ''), ...(raw.chat.provider ? { provider: String(raw.chat.provider) } : {}) }
+        : null,
       mode: MODES[raw?.mode] ? raw.mode : 'edits',
+      agent: typeof raw?.agent === 'string' ? raw.agent : 'claude',
       model: Object.hasOwn(MODELS, raw?.model ?? '') ? raw.model : 'default',
       notify: raw?.notify !== false,
       chatsScope: raw?.chatsScope === 'all' ? 'all' : 'project',
@@ -715,7 +723,8 @@ export function register(ctx) {
       t('telegram.ctxProject', { value: proj ? `<b>${esc(proj.name)}</b>` : esc(t('telegram.projectNone')) }),
       t('telegram.ctxChat', { value: st.chat ? quoted(chatTitle()) : esc(t('telegram.chatNew')) }),
       t('telegram.ctxMode', { value: `${MODES[st.mode].icon} ${esc(modeLabel(st.mode))}` }),
-      t('telegram.ctxModel', { value: esc(modelLabel(st.model)) }),
+      ...(agents().length > 1 ? [t('telegram.ctxAgent', { value: esc(agentLabel(taskAgent())) })] : []),
+      ...(taskAgent() === 'claude' ? [t('telegram.ctxModel', { value: esc(modelLabel(st.model)) })] : []),
     ];
   }
 
@@ -808,14 +817,16 @@ export function register(ctx) {
       t('telegram.ctxMode', { value: `<b>${MODES[st.mode].icon} ${esc(modeLabel(st.mode))}</b>` }),
       `<i>${esc(modeHint(st.mode))}</i>`,
       '',
-      t('telegram.ctxModel', { value: `<b>${esc(modelLabel(st.model))}</b>` }),
+      ...(agents().length > 1 ? [t('telegram.ctxAgent', { value: `<b>${esc(agentLabel(st.agent))}</b>` }), `<i>${esc(t('telegram.agentHint'))}</i>`, ''] : []),
+      ...(st.agent === 'claude' ? [t('telegram.ctxModel', { value: `<b>${esc(modelLabel(st.model))}</b>` })] : []),
       t(st.notify ? 'telegram.notifyOnLine' : 'telegram.notifyOffLine'),
     ];
     return {
       text: lines.join('\n'),
       markup: ikb(
         Object.keys(MODES).map((k) => btn(mark(st.mode === k, `${MODES[k].icon} ${modeLabel(k)}`), `mo:${k}`)),
-        Object.keys(MODELS).map((k) => btn(mark(st.model === k, modelLabel(k)), `md:${k}`)),
+        ...(agents().length > 1 ? [agents().map((a) => btn(mark(st.agent === a.id, `🤖 ${a.label}`), `ag:${a.id}`))] : []),
+        ...(st.agent === 'claude' ? [Object.keys(MODELS).map((k) => btn(mark(st.model === k, modelLabel(k)), `md:${k}`))] : []),
         [btn(t(st.notify ? 'telegram.btnNotifyOn' : 'telegram.btnNotifyOff'), 'nt')],
         [backBtn()],
       ),
@@ -895,6 +906,7 @@ export function register(ctx) {
       prompt,
       ...where,
       mode: st.mode,
+      agent: taskAgent(),
       model: st.model,
       version: selVersion,
       threadId: null,
@@ -1092,7 +1104,9 @@ export function register(ctx) {
         ...(run.dirs.length ? { dirs: run.dirs } : {}),
         ...(run.resume ? { resume: run.resume } : {}),
         ...(run.projectId ? { projectId: run.projectId } : {}),
-        ...(MODELS[run.model] ? { model: MODELS[run.model] } : {}),
+        // A new chat runs with the chosen agent; a continued one keeps its own. Models listed here are Claude's.
+        ...(run.resume ? {} : { provider: run.agent }),
+        ...(run.agent === 'claude' && MODELS[run.model] ? { model: MODELS[run.model] } : {}),
         permissionMode: MODES[run.mode].perm,
         source: 'telegram',
       });
@@ -1140,7 +1154,7 @@ export function register(ctx) {
       const info = (await sessions()).find((s) => s.sessionId === sessionId);
       title = oneLine(info?.title) || title || clip(oneLine(run.prompt), 50);
       if (run.version === selVersion) {
-        if (!run.resume && !st.chat) st.chat = { sessionId, title: clip(title, 80), cwd: run.cwd };
+        if (!run.resume && !st.chat) st.chat = { sessionId, title: clip(title, 80), cwd: run.cwd, provider: run.agent };
         else if (st.chat?.sessionId === run.resume) Object.assign(st.chat, { sessionId, title: clip(title, 80) });
         save();
       }
@@ -1368,6 +1382,13 @@ export function register(ctx) {
           save();
           emitUpdate();
           ack(t('telegram.toastMode', { label: modeLabel(a1) }));
+          return show(settingsCard(), cq);
+        case 'ag':
+          if (!ctx.core.registry.has(a1)) return outdated();
+          st.agent = a1;
+          save();
+          emitUpdate();
+          ack(t('telegram.toastAgent', { label: agentLabel(a1) }));
           return show(settingsCard(), cq);
         case 'md':
           if (!Object.hasOwn(MODELS, a1 ?? '')) return outdated();

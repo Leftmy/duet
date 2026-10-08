@@ -16,7 +16,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { listSegments, loadSegment } from '../../segments.mjs';
+import { findFile, listSegments, loadSegment } from '../../segments.mjs';
 import { runTool } from '../../core/tools.mjs';
 import { t as tr } from '../../i18n.mjs';
 import { createTranslator, historyEvents, subagentEvents } from './translate.mjs';
@@ -396,6 +396,9 @@ export function createClaudeProvider({ stats, log = () => {} }) {
     },
 
     listSegments: (sessionId, cwd) => listSegments(sessionId, cwd),
+
+    /** The transcript file (watched to notice other windows continuing the session). */
+    sessionFile: (sessionId, cwd) => findFile(sessionId, cwd),
 
     /** All subagent transcripts of a saved session as desk events. */
     async loadSubagents(sessionId, cwd) {

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  RefreshCw,
   AppWindow,
   ArrowDown,
   ArrowUp,
@@ -287,6 +288,17 @@ function Header({ thread, changes, changesOpen, split }: { thread: Thread; chang
               onClick={() => {
                 setMenu(false);
                 detachThread(thread.id);
+              }}
+            />
+          )}
+          {thread.sessionId && (
+            <MenuItem
+              icon={<RefreshCw size={14} />}
+              label={t('thread.syncChat')}
+              hint={t('thread.syncChatHint')}
+              onClick={() => {
+                setMenu(false);
+                useStore.getState().syncThread(thread.id, true);
               }}
             />
           )}

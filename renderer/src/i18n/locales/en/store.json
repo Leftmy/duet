@@ -44,5 +44,8 @@
   "agentsFailed": "Couldn't load agents: {error}",
   "handingOver": "Handing the conversation over…",
   "switchWhileRunning": "Wait for the current answer to finish (or stop it), then switch agents",
-  "switchedTo": "Switched to {name} · the conversation carries over"
+  "switchedTo": "Switched to {name} · the conversation carries over",
+  "synced": "Chat updated: it was continued in another window",
+  "syncNothing": "The chat is up to date",
+  "syncBusy": "Wait for the answer to finish, then sync"
 }

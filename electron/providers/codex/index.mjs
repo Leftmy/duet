@@ -423,6 +423,13 @@ export function createCodexProvider({ log = () => {} } = {}) {
       }));
     },
 
+    /** The rollout file (watched to notice the Codex app or CLI continuing the thread). */
+    async sessionFile(sessionId) {
+      const srv = await ensureServer();
+      const r = await srv.request('thread/read', { threadId: sessionId, includeTurns: false });
+      return r.thread?.path ?? null;
+    },
+
     /** The rollout file has every command and tool call; thread/read (messages and edits only) is the fallback. */
     async loadHistory(sessionId) {
       const srv = await ensureServer();

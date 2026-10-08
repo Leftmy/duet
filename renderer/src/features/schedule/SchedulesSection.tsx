@@ -15,7 +15,10 @@ import {
   Send,
   Trash2,
 } from 'lucide-react';
-import { useStore } from '../../store';
+import { modelsOf, useStore } from '../../store';
+import { AgentMark } from '../../components/AgentMark';
+import { AgentTabs } from '../../components/SettingsExtra';
+import type { ProviderId } from '../../types';
 import { askConfirm } from '../../lib/dialog';
 import { Markdown } from '../../components/Markdown';
 import { spring } from '../../components/Popover';
@@ -31,6 +34,7 @@ type SchedPerm = 'acceptEdits' | 'default' | 'bypassPermissions';
 type Schedule = { type: 'interval'; minutes: number } | { type: 'daily'; time: string; days: number[] };
 
 interface RunRecord {
+  provider?: ProviderId;
   ts: number;
   ok: boolean;
   durationMs: number;
@@ -44,6 +48,8 @@ interface SchedTask {
   name: string;
   prompt: string;
   cwd: string;
+  /** Agent that runs the task. */
+  provider?: ProviderId;
   model: string;
   effort: Effort | null;
   permissionMode: SchedPerm;
@@ -151,6 +157,7 @@ function toDraft(t?: SchedTask): Draft {
     name: t?.name ?? '',
     prompt: t?.prompt ?? '',
     cwd: t?.cwd ?? useStore.getState().settings.cwd ?? '',
+    provider: t?.provider ?? 'claude',
     model: t?.model ?? 'default',
     effort: t?.effort ?? null,
     permissionMode: t?.permissionMode ?? 'acceptEdits',
@@ -304,7 +311,8 @@ export function TelegramSection() {
 
 function TaskCard({ task, now, onEdit }: { task: SchedTask; now: number; onEdit: () => void }) {
   const toast = useStore((s) => s.toast);
-  const models = useStore((s) => s.models);
+  const models = useStore((s) => modelsOf(s, task.provider ?? 'claude'));
+  const multiAgent = useStore((s) => Object.keys(s.providers).length > 1);
   const [open, setOpen] = useState(false);
   const last = task.history[0];
 
@@ -319,7 +327,7 @@ function TaskCard({ task, now, onEdit }: { task: SchedTask; now: number; onEdit:
 
   const openChat = (rec: RunRecord) => {
     if (!rec.sessionId) return;
-    useStore.getState().openSession({ sessionId: rec.sessionId, title: task.name, cwd: task.cwd, lastModified: rec.ts });
+    useStore.getState().openSession({ sessionId: rec.sessionId, provider: rec.provider ?? task.provider ?? 'claude', title: task.name, cwd: task.cwd, lastModified: rec.ts });
     useStore.setState({ settingsOpen: false });
   };
 
@@ -336,7 +344,9 @@ function TaskCard({ task, now, onEdit }: { task: SchedTask; now: number; onEdit:
     >
       <div className="sched-card-head">
         <div className="sched-card-title">
-          <div className="truncate sched-name">{task.name}</div>
+          <div className="truncate sched-name">
+            {multiAgent && <AgentMark provider={task.provider ?? 'claude'} size={13} />} {task.name}
+          </div>
           <div className="muted small sched-meta">
             <span>{scheduleText(task.schedule)}</span>
             <span className="sched-dot">·</span>
@@ -450,13 +460,15 @@ function TaskCard({ task, now, onEdit }: { task: SchedTask; now: number; onEdit:
 
 function TaskForm({ draft: initial, hasToken, onClose }: { draft: Draft; hasToken: boolean; onClose: () => void }) {
   const toast = useStore((s) => s.toast);
-  const models = useStore((s) => s.models);
+  const providers = useStore((s) => s.providers);
+  const claudeModels = useStore((s) => s.models);
   const [d, setD] = useState<Draft>(initial);
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
 
-  const modelList = models.length ? models : [{ value: 'default', displayName: t('common.default'), description: '' }];
-  const model = models.find((m) => m.value === d.model);
+  const agentModels = modelsOf({ models: claudeModels, providers }, d.provider ?? 'claude');
+  const modelList = agentModels.length ? agentModels : [{ value: 'default', displayName: t('common.default'), description: '' }];
+  const model = agentModels.find((m) => m.value === d.model);
   const efforts: Effort[] = model ? model.supportedEffortLevels ?? [] : ALL_EFFORTS;
   const permList = perms();
   const perm = permList.find((p) => p.v === d.permissionMode) ?? permList[0];
@@ -471,6 +483,7 @@ function TaskForm({ draft: initial, hasToken, onClose }: { draft: Draft; hasToke
         name: d.name,
         prompt: d.prompt,
         cwd: d.cwd,
+        provider: d.provider,
         model: d.model,
         effort: d.effort && efforts.includes(d.effort) ? d.effort : null,
         permissionMode: d.permissionMode,
@@ -528,12 +541,17 @@ function TaskForm({ draft: initial, hasToken, onClose }: { draft: Draft; hasToke
           </div>
         </Field>
 
+        {Object.keys(providers).length > 1 && (
+          <Field label={t('schedule.agent')}>
+            <AgentTabs value={d.provider ?? 'claude'} onChange={(provider) => set({ provider, model: 'default', effort: null })} />
+          </Field>
+        )}
         <div className="sched-grid">
           <Field label={t('schedule.model')}>
             <select className="input select" value={d.model} onChange={(e) => set({ model: e.target.value })}>
               {modelList.map((m) => (
                 <option key={m.value} value={m.value}>
-                  {m.value === 'default' ? t('common.default') : modelLabel(m.value, models)}
+                  {m.value === 'default' ? t('common.default') : modelLabel(m.value, agentModels)}
                 </option>
               ))}
             </select>

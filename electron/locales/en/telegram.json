@@ -184,5 +184,8 @@
   "forbidden": "The bot is blocked or can't post to this chat",
   "apiError": "Telegram returned an error: {error}",
   "noToken": "Bot token is not set",
-  "network": "Can't reach Telegram: {error}"
+  "network": "Can't reach Telegram: {error}",
+  "ctxAgent": "🤖 Agent: {value}",
+  "agentHint": "New chats start with this agent; a chosen chat continues with its own.",
+  "toastAgent": "Agent: {label}"
 }
