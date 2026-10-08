@@ -216,6 +216,9 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
           // Lets the UI roll files back to any earlier user message.
           enableFileCheckpointing: true,
           agentProgressSummaries: true,
+          // We have per-task stop buttons (tasks bar, Agents tab), so Stop only aborts the current turn
+          // and background agents/tasks keep running. Without this the CLI kills them all on interrupt.
+          perTaskStopAffordance: true,
           ...(supportsAdaptiveThinking(spec.model) ? { thinking: { type: 'adaptive', display: 'summarized' } } : {}),
           systemPrompt: { type: 'preset', preset: 'claude_code', ...(spec.instructions ? { append: spec.instructions } : {}) },
           resume: spec.resume || undefined,
