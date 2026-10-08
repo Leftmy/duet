@@ -35,7 +35,7 @@
   "projectNone": "not selected",
   "chatQuoted": "\"{title}\"",
   "chatNew": "new",
-  "warning": "Messages to the bot run Claude on this computer with the selected permissions (\"allow edits\" by default, commands are confirmed with buttons) while Claude Desk is open. The bot only obeys the configured chat id and ignores all other messages and button presses.",
+  "warning": "Messages to the bot run Claude on this computer with the selected permissions (\"allow edits\" by default, commands are confirmed with buttons) while Duet is open. The bot only obeys the configured chat id and ignores all other messages and button presses.",
   "howTo": "How to use",
   "helpText": "Turn on the switch, open the bot in Telegram and press Start: a menu appears under the input field. Write a task in plain text: Claude runs it as a regular chat in the selected project, live in this app too, while the bot shows the current step and elapsed time with a Stop button, then sends back the answer (long ones also as a .md file)."
 }

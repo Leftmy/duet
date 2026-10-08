@@ -155,7 +155,7 @@ export function App() {
         >
           <PanelLeft size={15} />
         </button>
-        <span className="titlebar-name">Claude Desk</span>
+        <span className="titlebar-name">Duet</span>
       </div>
       <div className="body">
         <motion.aside className="sidebar" initial={false} animate={{ width: sidebarOpen ? 264 : 0 }} transition={spring}>

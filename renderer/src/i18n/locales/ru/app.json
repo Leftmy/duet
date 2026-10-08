@@ -1,6 +1,6 @@
 {
   "toggleSidebar": "Боковая панель (Ctrl B)",
   "probeError": "Не удалось запустить Claude Code: {error}. Проверьте, что выполнен вход (`claude` → /login).",
-  "updateReady": "Собрана новая версия Claude Desk",
+  "updateReady": "Собрана новая версия Duet",
   "relaunch": "Перезапустить"
 }

@@ -122,7 +122,7 @@ export function createBrowser({ getWindow, emit }) {
       name: 'desk-browser',
       version: '1.0.0',
       instructions:
-        'Built-in browser panel of the Claude Desk app, visible to the user next to the chat. ' +
+        'Built-in browser panel of the Duet app, visible to the user next to the chat. ' +
         'Use it to open web pages, check local dev servers (http://localhost:...), read docs and verify UI changes. ' +
         'Typical loop: navigate → screenshot or read → click/type → screenshot.',
       tools: [

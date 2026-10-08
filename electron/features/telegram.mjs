@@ -1,4 +1,4 @@
-// Remote control of Claude Desk from Telegram: a long-polling bot with a button-driven UI (a persistent reply
+// Remote control of Duet from Telegram: a long-polling bot with a button-driven UI (a persistent reply
 // keyboard as the main menu, inline menus edited in place) that obeys only the configured private chat (the
 // user's own account) and runs Claude Code tasks in the user's projects as regular app chats (visible and live in
 // the main window). Permission requests are answered with buttons here or in the app, whichever comes first;

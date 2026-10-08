@@ -36,7 +36,7 @@ export function createTerminals({ emit }) {
         cols: cols || 100,
         rows: rows || 30,
         cwd: cwd && fs.existsSync(cwd) ? cwd : os.homedir(),
-        env: { ...process.env, TERM_PROGRAM: 'claude-desk' },
+        env: { ...process.env, TERM_PROGRAM: 'duet' },
         useConpty: true,
       });
       p.onData((data) => emit('term:data', { id, data }));

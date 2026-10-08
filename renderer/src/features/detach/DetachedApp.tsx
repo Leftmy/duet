@@ -223,7 +223,7 @@ export function DetachedApp() {
   return (
     <div className="app detached-app" key={lang}>
       <div className="titlebar">
-        <span className="titlebar-name truncate">{thread?.title ?? 'Claude Desk'}</span>
+        <span className="titlebar-name truncate">{thread?.title ?? 'Duet'}</span>
         <div className="spacer" />
         {thread && (
           <button className="icon-btn no-drag" title={t('detach.returnToMain')} onClick={() => returnToMain(thread)}>

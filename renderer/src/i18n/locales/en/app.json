@@ -1,6 +1,6 @@
 {
   "toggleSidebar": "Sidebar (Ctrl B)",
   "probeError": "Couldn't start Claude Code: {error}. Make sure you are logged in (`claude` → /login).",
-  "updateReady": "A new version of Claude Desk has been built",
+  "updateReady": "A new version of Duet has been built",
   "relaunch": "Relaunch"
 }

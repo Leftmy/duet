@@ -24,5 +24,5 @@
   "alreadyRunning": "Задача уже выполняется",
   "tokenFormat": "Токен не похож на токен бота (формат 123456:ABC…)",
   "chatIdFormat": "Chat id — число (например 123456789) или @имя_канала",
-  "testMessage": "Claude Desk: тестовое сообщение ✓"
+  "testMessage": "Duet: тестовое сообщение ✓"
 }

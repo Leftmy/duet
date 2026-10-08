@@ -23,7 +23,7 @@
   "nextRun": "next run {when}",
   "title": "Schedule",
   "newTask": "New task",
-  "intro": "Claude runs tasks on its own on a schedule while Claude Desk is open. Each run is saved as a regular chat, and the result arrives as a Windows or Telegram notification. A missed daily run happens the next time the app opens.",
+  "intro": "Claude runs tasks on its own on a schedule while Duet is open. Each run is saved as a regular chat, and the result arrives as a Windows or Telegram notification. A missed daily run happens the next time the app opens.",
   "empty": "No tasks yet",
   "emptyExample": "For example: \"every morning, check dependencies and open TODOs and send me a summary\".",
   "homeFolder": "home folder",
@@ -78,6 +78,6 @@
   "removeToken": "Remove token",
   "test": "Test",
   "tgMovedHint": "Telegram notifications and remote control are set up in Settings → Telegram.",
-  "tgSectionIntro": "Connect your own bot to get results of scheduled tasks and to control Claude Desk from your phone.",
+  "tgSectionIntro": "Connect your own bot to get results of scheduled tasks and to control Duet from your phone.",
   "tgBotTitle": "Bot"
 }

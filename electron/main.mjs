@@ -26,8 +26,40 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.CLAUDE_UI_DEV_URL;
 
-app.setName('Claude Desk');
+app.setName('Duet');
+// The app id predates the rename; keeping it lets the installer upgrade the old install in place.
 if (process.platform === 'win32') app.setAppUserModelId('local.claude-desk');
+migrateUserData('Claude Desk');
+
+/** One-time copy of settings, chats state and browser logins from the app's previous userData folder. */
+function migrateUserData(oldName) {
+  const dir = app.getPath('userData');
+  const old = path.join(app.getPath('appData'), oldName);
+  if (fs.existsSync(path.join(dir, 'settings.json')) || !fs.existsSync(path.join(old, 'settings.json'))) return;
+  // Per-file: a still-running old instance keeps some files locked; those are skipped, not fatal.
+  const copy = (from, to) => {
+    for (const e of fs.readdirSync(from, { withFileTypes: true })) {
+      // Caches rebuild themselves; DevToolsActivePort belongs to the old instance.
+      if (/(Cache|DevToolsActivePort)$/i.test(e.name)) continue;
+      const src = path.join(from, e.name);
+      const dst = path.join(to, e.name);
+      try {
+        if (e.isDirectory()) {
+          fs.mkdirSync(dst, { recursive: true });
+          copy(src, dst);
+        } else if (!fs.existsSync(dst)) fs.copyFileSync(src, dst);
+      } catch (err) {
+        console.error('userData migration: skipped', src, err.code ?? err);
+      }
+    }
+  };
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    copy(old, dir);
+  } catch (e) {
+    console.error('userData migration failed', e);
+  }
+}
 
 const THEMES = {
   dark: { bg: '#181818', symbol: '#cfcfcf' },

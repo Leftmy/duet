@@ -1,8 +1,8 @@
 {
-  "name": "claude-ui",
-  "productName": "Claude Desk",
+  "name": "duet",
+  "productName": "Duet",
   "version": "0.1.0",
-  "description": "Desktop UI for Claude Code (Agent SDK)",
+  "description": "Desktop UI for coding agents",
   "private": true,
   "type": "module",
   "main": "electron/main.mjs",
@@ -65,7 +65,7 @@
   },
   "build": {
     "appId": "local.claude-desk",
-    "productName": "Claude Desk",
+    "productName": "Duet",
     "directories": {
       "buildResources": "build",
       "output": "release"
@@ -92,7 +92,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Claude Desk",
+      "shortcutName": "Duet",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
     },

@@ -1,4 +1,4 @@
-# Claude Desk
+# Duet
 
 Desktop UI for Claude Code built on the Claude Agent SDK. It runs the regular
 Claude Code that is installed and signed in on this machine, so it uses your
@@ -14,7 +14,7 @@ npm start
 
 Development with hot reload: `npm run dev`.
 
-Windows installer (`release\Claude Desk Setup <version>.exe`):
+Windows installer (`release\Duet Setup <version>.exe`):
 
 ```
 npm run dist
@@ -44,7 +44,7 @@ npm run shortcut
 
 - `electron/claude.mjs` — bridge to the Agent SDK: one long-lived streaming query per chat,
   live model / effort / permission-mode switching, tool approvals, interrupts, session history.
-- `electron/main.mjs` — window, IPC, settings (`%APPDATA%\Claude Desk\settings.json`).
+- `electron/main.mjs` — window, IPC, settings (`%APPDATA%\Duet\settings.json`).
 - `renderer/src` — React UI (Zustand store, Motion animations).
 
 ## Shortcuts

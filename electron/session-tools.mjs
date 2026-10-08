@@ -1,4 +1,4 @@
-// Session helpers Claude can call from Claude Desk (same names as the Claude app's ccd_session tools):
+// Session helpers Claude can call from Duet (same names as the Claude app's ccd_session tools):
 // chapters for the transcript table of contents and suggested follow-up tasks. The renderer draws
 // them from the tool calls themselves; these handlers only acknowledge.
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
@@ -12,7 +12,7 @@ export function sessionToolsServer() {
     name: 'ccd_session',
     version: '1.0.0',
     instructions:
-      'Claude Desk session helpers. mark_chapter starts a new chapter in the transcript (shown as a divider and in the table of contents). ' +
+      'Duet session helpers. mark_chapter starts a new chapter in the transcript (shown as a divider and in the table of contents). ' +
       'spawn_task suggests a separate follow-up task the user can start in a new chat with one click; dismiss_task withdraws one.',
     tools: [
       tool(
