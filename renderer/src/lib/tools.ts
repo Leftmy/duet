@@ -21,11 +21,11 @@ export type ToolKind =
 export function toolKind(name: string): ToolKind {
   if (name === 'Bash' || name === 'PowerShell' || name === 'BashOutput' || name === 'KillShell') return 'shell';
   if (name === 'Read' || name === 'LS') return 'read';
-  if (name === 'Edit' || name === 'MultiEdit' || name === 'NotebookEdit') return 'edit';
+  if (name === 'Edit' || name === 'MultiEdit' || name === 'NotebookEdit' || name === 'Patch') return 'edit';
   if (name === 'Write') return 'write';
   if (name === 'Grep' || name === 'Glob' || name === 'ToolSearch') return 'search';
   if (name === 'WebSearch' || name === 'WebFetch') return 'web';
-  if (name === 'Task' || name === 'Agent') return 'agent';
+  if (name === 'Task' || name === 'Agent' || name === 'mcp__desk-agents__agent_run') return 'agent';
   if (name === 'TodoWrite') return 'todo';
   if (name === 'AskUserQuestion') return 'question';
   if (name === 'ExitPlanMode' || name === 'EnterPlanMode') return 'plan';
@@ -81,9 +81,16 @@ export function parseUnifiedDiff(text: string): DiffLine[] {
   return out;
 }
 
+/** A unified-diff fragment without file headers (Codex patches): hunks, or plain lines for a new file. */
+function patchLines(diff: string, kind: string): DiffLine[] {
+  if (/^@@/m.test(diff)) return parseUnifiedDiff(diff).filter((l, n) => !(n === 0 && l.type === 'sep' && kind === 'add'));
+  return linesOf(diff).map((text) => (text.startsWith('+') ? { type: 'add' as const, text: text.slice(1) } : text.startsWith('-') ? { type: 'del' as const, text: text.slice(1) } : { type: kind === 'add' ? ('add' as const) : ('ctx' as const), text: text.replace(/^ /, '') }));
+}
+
 export function toolDiff(item: ToolItem): DiffLine[] | null {
   const i = item.input ?? {};
   if (item.name === 'Edit') return buildDiff(i.old_string ?? '', i.new_string ?? '');
+  if (item.name === 'Patch' && typeof i.diff === 'string') return patchLines(i.diff, i.kind);
   if (item.name === 'MultiEdit' && Array.isArray(i.edits)) {
     const out: DiffLine[] = [];
     i.edits.forEach((e: any, n: number) => {
@@ -139,6 +146,12 @@ export function toolSummary(item: ToolItem): { verb: string; subject?: string; c
       return { verb: t('tools.editedNotebook'), subject: basename(i.notebook_path ?? ''), title: i.notebook_path };
     case 'Write':
       return { verb: running ? t('tools.writing') : t('tools.wrote'), subject: basename(i.file_path ?? ''), title: i.file_path };
+    case 'Patch':
+      return {
+        verb: i.kind === 'add' ? (running ? t('tools.writing') : t('tools.wrote')) : i.kind === 'delete' ? t('tools.deletedFile') : running ? t('tools.editing') : t('tools.edited'),
+        subject: basename(i.move_path ?? i.file_path ?? ''),
+        title: i.move_path ? `${i.file_path} → ${i.move_path}` : i.file_path,
+      };
     case 'Grep':
       return { verb: t('tools.searched'), subject: trunc(String(i.pattern ?? ''), 70), code: true, title: i.path };
     case 'Glob':

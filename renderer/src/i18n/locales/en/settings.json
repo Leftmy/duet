@@ -3,7 +3,7 @@
   "closeEsc": "Close (Esc)",
   "nav_general": "General",
   "nav_defaults": "New chats",
-  "nav_claude": "Claude Code",
+  "nav_claude": "Agents",
   "nav_instr": "Instructions & hooks",
   "nav_commands": "Commands & skills",
   "nav_mcp": "MCP servers",
@@ -112,5 +112,11 @@
   "rebuilt": "Built, restarting…",
   "rebuildFailed": "Build failed: {error}",
   "rebuild": "Rebuild and restart",
-  "installedHint": "The installed version is updated with a new installer (npm run dist)."
+  "installedHint": "The installed version is updated with a new installer (npm run dist).",
+  "agent": "Agent",
+  "agentHint": "Which agent new chats talk to. Any chat can switch agents later and keeps its conversation.",
+  "claudeModel": "Claude model",
+  "version": "Version",
+  "agentMissing": "{name} is not available: {error}",
+  "key_switchAgent": "Switch the chat to another agent"
 }

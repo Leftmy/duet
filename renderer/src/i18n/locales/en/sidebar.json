@@ -58,5 +58,6 @@
   "theme": "Theme: {theme}",
   "theme_system": "system",
   "theme_dark": "dark",
-  "theme_light": "light"
+  "theme_light": "light",
+  "agentHint": "Chat with {name}"
 }

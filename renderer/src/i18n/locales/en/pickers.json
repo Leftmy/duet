@@ -1,5 +1,5 @@
 {
-  "permTitle": "How should Claude ask for approval?",
+  "permTitle": "How should {name} ask for approval?",
   "reset": "Reset",
   "chooseModel": "Choose model",
   "hideLegacy": "Hide older versions",
@@ -23,5 +23,9 @@
   "folders": "Folders",
   "chooseFolder": "Choose folder…",
   "createProject": "Create project…",
-  "createProjectHint": "Several folders under one name"
+  "createProjectHint": "Several folders under one name",
+  "agentTitle": "Agent",
+  "switchAgent": "Switch agent",
+  "switchHint": "Continue this chat — the conversation carries over",
+  "agentUnavailable": "Unavailable: {error}"
 }

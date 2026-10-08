@@ -62,5 +62,6 @@
   "theme": "Тема: {theme}",
   "theme_system": "системная",
   "theme_dark": "тёмная",
-  "theme_light": "светлая"
+  "theme_light": "светлая",
+  "agentHint": "Чат с {name}"
 }

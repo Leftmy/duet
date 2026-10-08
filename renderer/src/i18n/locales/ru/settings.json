@@ -3,7 +3,7 @@
   "closeEsc": "Закрыть (Esc)",
   "nav_general": "Общие",
   "nav_defaults": "Новые чаты",
-  "nav_claude": "Claude Code",
+  "nav_claude": "Агенты",
   "nav_instr": "Инструкции и хуки",
   "nav_commands": "Команды и навыки",
   "nav_mcp": "MCP-серверы",
@@ -116,5 +116,11 @@
   "rebuilt": "Собрано, перезапускаю…",
   "rebuildFailed": "Сборка не удалась: {error}",
   "rebuild": "Пересобрать и перезапустить",
-  "installedHint": "Установленная версия обновляется новым установщиком (npm run dist)."
+  "installedHint": "Установленная версия обновляется новым установщиком (npm run dist).",
+  "agent": "Агент",
+  "agentHint": "С каким агентом начинаются новые чаты. Любой чат можно потом переключить на другого агента — разговор сохранится.",
+  "claudeModel": "Модель Claude",
+  "version": "Версия",
+  "agentMissing": "{name} недоступен: {error}",
+  "key_switchAgent": "Переключить чат на другого агента"
 }

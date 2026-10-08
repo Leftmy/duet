@@ -83,12 +83,16 @@ export function RewindDialog() {
   const entryIndex = thread && dlg ? thread.entries.findIndex((e) => e.id === dlg.entryId) : -1;
   const entry = entryIndex >= 0 ? thread!.entries[entryIndex] : undefined;
   const prevTurn = thread && entryIndex > 0 ? [...thread.entries.slice(0, entryIndex)].reverse().find((e) => e.kind === 'turn') : undefined;
-  const conversationOk = Boolean(entry) && (entryIndex === 0 || Boolean(prevTurn && prevTurn.kind === 'turn' && prevTurn.lastUuid));
+  const caps = useStore((s) => (thread ? s.providers[thread.provider]?.caps : undefined));
+  // Turn-based agents (Codex) can drop any number of their own turns; anchor-based ones need the previous turn's anchor.
+  const conversationOk =
+    Boolean(entry) && (caps?.rollback === 'turns' || entryIndex === 0 || Boolean(prevTurn && prevTurn.kind === 'turn' && prevTurn.lastUuid));
+  const filesOk = caps?.rewindFiles !== false;
   const files = preview?.filesChanged ?? [];
   const codeOk = Boolean(preview?.canRewind) && files.length > 0;
 
   useEffect(() => {
-    if (!dlg || !thread || !entry || entry.kind !== 'user' || !entry.uuid) {
+    if (!dlg || !thread || !entry || entry.kind !== 'user' || !entry.uuid || !filesOk) {
       setPreview(null);
       return;
     }
@@ -100,7 +104,7 @@ export function RewindDialog() {
         threadId: thread.id,
         uuid: entry.uuid,
         dryRun: true,
-        config: { cwd: thread.cwd, model: thread.model, effort: thread.effort, permissionMode: thread.permissionMode, resume: thread.sessionId },
+        config: { provider: thread.provider, cwd: thread.cwd, model: thread.model, effort: thread.effort, permissionMode: thread.permissionMode, resume: thread.sessionId },
       })
       .then((p) => alive && setPreview(p))
       .catch((e) => alive && setPreview({ canRewind: false, error: String(e?.message ?? e) }))

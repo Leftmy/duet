@@ -6,7 +6,8 @@ import { CommandsSection } from '../features/commands/CommandsSection';
 import { SchedulesSection, TelegramSection } from '../features/schedule/SchedulesSection';
 import { useStore } from '../store';
 import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel } from '../lib/format';
-import type { Effort, PermMode, ThemePref } from '../types';
+import type { Effort, PermMode, ThemePref, ProviderId } from '../types';
+import type { ProviderProbe } from '../desk';
 import { spring } from './Popover';
 import { LANGS, t, type Lang } from '../i18n';
 import { AboutSection, McpManager, SkillsList, StatsView } from './SettingsExtra';
@@ -80,6 +81,7 @@ const KEYS: [string, string][] = [
   ['Esc', 'stop'],
   ['/', 'slash'],
   ['Ctrl + N', 'newChat'],
+  ['Ctrl + .', 'switchAgent'],
   ['Ctrl + K', 'palette'],
   ['Ctrl + Shift + F', 'search'],
   ['Shift + click', 'multiSelect'],
@@ -100,6 +102,8 @@ export function SettingsModal() {
   const models = useStore((s) => s.models);
   const account = useStore((s) => s.account);
   const usage = useStore((s) => s.usage);
+  const providers = useStore((s) => s.providers);
+  const usageBy = useStore((s) => s.usageBy);
   const mcp = useStore((s) => s.mcp);
   const setSettings = useStore((s) => s.setSettings);
   const [section, setSection] = useState<Section>('general');
@@ -188,7 +192,16 @@ export function SettingsModal() {
                     <>
                       <h2>{t('settings.nav_defaults')}</h2>
                       <p className="muted small">{t('settings.defaultsHint')}</p>
-                      <Row title={t('settings.model')}>
+                      {Object.keys(providers).length > 1 && (
+                        <Row title={t('settings.agent')} hint={t('settings.agentHint')}>
+                          <Select<ProviderId>
+                            value={settings.provider}
+                            onChange={(provider) => setSettings({ provider })}
+                            options={(Object.entries(providers) as [ProviderId, ProviderProbe][]).filter(([, p]) => p.available).map(([v, p]) => ({ v, label: p.label }))}
+                          />
+                        </Row>
+                      )}
+                      <Row title={settings.provider === 'claude' || Object.keys(providers).length < 2 ? t('settings.model') : t('settings.claudeModel')}>
                         <Select
                           value={settings.model}
                           onChange={(model) => setSettings({ model })}
@@ -256,6 +269,38 @@ export function SettingsModal() {
                         <span className="muted small">{t('settings.enabled')}</span>
                       </Row>
                       <p className="muted small">{t('settings.claudeFooter')}</p>
+                      {(Object.entries(providers) as [ProviderId, ProviderProbe][])
+                        .filter(([id]) => id !== 'claude')
+                        .map(([id, p]) => (
+                          <div key={id}>
+                            <h2>{p.label}</h2>
+                            {p.available ? (
+                              <>
+                                <Row title={t('settings.account')}>
+                                  <span className="muted">{p.account?.email ?? '—'}</span>
+                                </Row>
+                                <Row title={t('settings.subscription')}>
+                                  <span className="muted">{p.account?.subscriptionType ?? '—'}</span>
+                                </Row>
+                                {usageBy[id]?.session && (
+                                  <Row title={t('settings.sessionLimit')}>
+                                    <span className="muted">{Math.round(usageBy[id]!.session!.pct)}%</span>
+                                  </Row>
+                                )}
+                                {usageBy[id]?.weekly && (
+                                  <Row title={t('settings.weeklyLimit')}>
+                                    <span className="muted">{Math.round(usageBy[id]!.weekly!.pct)}%</span>
+                                  </Row>
+                                )}
+                                <Row title={t('settings.version')}>
+                                  <span className="muted">{p.version ?? '—'}</span>
+                                </Row>
+                              </>
+                            ) : (
+                              <p className="muted small">{t('settings.agentMissing', { name: p.label, error: p.error ?? '' })}</p>
+                            )}
+                          </div>
+                        ))}
                     </>
                   )}
                   {section === 'mcp' && <McpManager />}

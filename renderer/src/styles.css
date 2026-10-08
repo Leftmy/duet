@@ -2976,6 +2976,16 @@ kbd.key {
   color: var(--text-2);
   text-transform: uppercase;
 }
+.agent-divider .chapter-title {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.agent-divider .chapter-line {
+  background: none;
+  border-top: 1px dashed var(--border-strong);
+  height: 0;
+}
 .toc-num {
   width: 18px;
   height: 18px;
@@ -3157,6 +3167,21 @@ kbd.key {
 }
 .chain-badge + .row-time,
 .chain-badge + .dot-run {
+  margin-left: 6px;
+}
+.agent-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
+  line-height: 15px;
+}
+.agent-badge + .chain-badge,
+.agent-badge + .row-time,
+.agent-badge + .dot-run {
   margin-left: 6px;
 }
 .thread-row.chain-part {

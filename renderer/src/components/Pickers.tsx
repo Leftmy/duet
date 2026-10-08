@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowDownToLine,
   ArrowLeft,
+  ArrowLeftRight,
+  Bot,
   ChevronDown,
   GitFork,
   Laptop,
@@ -20,8 +22,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
-import type { Effort, PermMode, Thread } from '../types';
-import { projectName, useStore } from '../store';
+import type { Effort, PermMode, ProviderId, Thread } from '../types';
+import { modelsOf, projectName, useStore } from '../store';
 import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel } from '../lib/format';
 import { MenuItem, Popover, spring } from './Popover';
 import { t } from '../i18n';
@@ -34,14 +36,67 @@ const PERM_ICONS: Record<PermMode, typeof ShieldCheck> = {
   bypassPermissions: ShieldAlert,
 };
 
+/** Which agent the chat talks to; switching mid-chat carries the conversation over. */
+export function ProviderPicker({ thread }: { thread: Thread }) {
+  const [open, setOpen] = useState(false);
+  const providers = useStore((s) => s.providers);
+  const switchProvider = useStore((s) => s.switchProvider);
+  const close = useCallback(() => setOpen(false), []);
+  const list = Object.entries(providers) as [ProviderId, (typeof providers)[string]][];
+  if (list.length < 2) return null;
+  const started = thread.entries.length > 0;
+  const label = providers[thread.provider]?.label ?? thread.provider;
+  return (
+    <Popover
+      open={open}
+      onClose={close}
+      width={300}
+      trigger={() => (
+        <button className="pill" title={t('pickers.agentTitle')} onClick={() => setOpen((v) => !v)}>
+          <Bot size={14} />
+          <span>{label}</span>
+        </button>
+      )}
+    >
+      <div className="menu-title">
+        <span>{started ? t('pickers.switchAgent') : t('pickers.agentTitle')}</span>
+      </div>
+      {list.map(([id, p]) => (
+        <MenuItem
+          key={id}
+          icon={id === thread.provider ? <Bot size={15} /> : <ArrowLeftRight size={15} />}
+          label={p.label}
+          hint={
+            !p.available
+              ? t('pickers.agentUnavailable', { error: p.error ?? '' })
+              : id === thread.provider
+                ? p.account?.email ?? p.version
+                : started
+                  ? t('pickers.switchHint')
+                  : p.account?.email ?? p.version
+          }
+          checked={id === thread.provider}
+          onClick={() => {
+            setOpen(false);
+            if (id !== thread.provider && p.available) switchProvider(thread.id, id);
+          }}
+        />
+      ))}
+    </Popover>
+  );
+}
+
 export function PermissionPicker({ thread }: { thread: Thread }) {
   const [open, setOpen] = useState(false);
   const setMode = useStore((s) => s.setPermissionMode);
-  const models = useStore((s) => s.models);
+  const models = useStore((s) => modelsOf(s, thread.provider));
+  const caps = useStore((s) => s.providers[thread.provider]?.caps);
+  const agent = useStore((s) => s.providers[thread.provider]?.label ?? 'Claude');
   const close = useCallback(() => setOpen(false), []);
   const current = PERM_MODES.find((m) => m.mode === thread.permissionMode) ?? PERM_MODES[0];
   const Icon = PERM_ICONS[current.mode];
   const autoSupported = models.find((m) => m.value === thread.model)?.supportsAutoMode !== false;
+  const allowed = (mode: PermMode) => (!caps?.modes || caps.modes.includes(mode)) && (mode !== 'auto' || autoSupported);
   return (
     <Popover
       open={open}
@@ -55,9 +110,9 @@ export function PermissionPicker({ thread }: { thread: Thread }) {
       )}
     >
       <div className="menu-title">
-        <span>{t('pickers.permTitle')}</span>
+        <span>{t('pickers.permTitle', { name: agent })}</span>
       </div>
-      {PERM_MODES.filter((m) => m.mode !== 'auto' || autoSupported).map((m) => {
+      {PERM_MODES.filter((m) => allowed(m.mode)).map((m) => {
         const I = PERM_ICONS[m.mode];
         return (
           <MenuItem
@@ -115,7 +170,7 @@ function EffortSlider({ levels, value, onChange }: { levels: Effort[]; value: Ef
 }
 
 export function ModelPicker({ thread }: { thread: Thread }) {
-  const models = useStore((s) => s.models);
+  const models = useStore((s) => modelsOf(s, thread.provider));
   const setModel = useStore((s) => s.setModel);
   const setEffort = useStore((s) => s.setEffort);
   const [open, setOpen] = useState(false);

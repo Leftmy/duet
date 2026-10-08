@@ -107,7 +107,7 @@ declare global {
         config: { provider?: ProviderId; cwd: string; model: string; effort?: Effort; permissionMode: PermMode; resume?: string };
       }): Promise<{ canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number }>;
       fork(payload: { sessionId: string; cwd?: string; uuid?: string; provider?: ProviderId }): Promise<string>;
-      rewindConversation(payload: { threadId: string; resumeAt: string | null }): Promise<boolean>;
+      rewindConversation(payload: { threadId: string; resumeAt: string | null; dropTurns?: number; sessionId?: string; provider?: ProviderId }): Promise<boolean>;
       backgroundTask(threadId: string, toolUseId: string): Promise<boolean>;
       taskOutput(file: string): Promise<{ text: string; truncated: boolean } | null>;
       gitStatus(cwd: string): Promise<GitStatus>;

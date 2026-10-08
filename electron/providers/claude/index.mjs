@@ -2,6 +2,8 @@
 // query, so model, effort and permission mode can change mid-session and turns can be interrupted.
 import {
   query,
+  createSdkMcpServer,
+  tool,
   listSessions,
   getSessionMessages,
   listSubagents,
@@ -15,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { listSegments, loadSegment } from '../../segments.mjs';
-import { sessionToolsServer } from '../../session-tools.mjs';
+import { runTool } from '../../core/tools.mjs';
 import { t as tr } from '../../i18n.mjs';
 import { createTranslator, historyEvents, subagentEvents } from './translate.mjs';
 
@@ -73,8 +75,10 @@ class InputQueue {
   }
 }
 
-function userMessage(text, images = [], uuid, priority) {
+/** reminder: hidden context sent ahead of the text (shown to the model, not in the chat feed). */
+function userMessage(text, images = [], uuid, priority, reminder) {
   const content = [
+    ...(reminder ? [{ type: 'text', text: `<system-reminder>\n${reminder}\n</system-reminder>` }] : []),
     ...images.map((img) => ({
       type: 'image',
       source: { type: 'base64', media_type: img.mediaType, data: img.data },
@@ -83,7 +87,7 @@ function userMessage(text, images = [], uuid, priority) {
   ];
   return {
     type: 'user',
-    message: { role: 'user', content: images.length ? content : text },
+    message: { role: 'user', content: images.length || reminder ? content : text },
     parent_tool_use_id: null,
     ...(uuid ? { uuid } : {}),
     // 'next' folds the message into the running turn at the next tool boundary (no interrupt).
@@ -101,8 +105,19 @@ export function withTimeout(promise, ms, label) {
 const supportsAdaptiveThinking = (model) => !/haiku/i.test(model || '');
 const dirOpt = (cwd) => (cwd ? { dir: cwd } : undefined);
 
-/** MCP servers from the core (desk-hosted, HTTP) in the SDK's config shape. */
-const mcpConfig = (list = []) => Object.fromEntries(list.map((m) => [m.name, { type: 'http', url: m.url, ...(m.headers ? { headers: m.headers } : {}) }]));
+/** Desk toolsets as in-process SDK MCP servers (tools appear as mcp__<set>__<tool>). */
+const sdkServers = (toolsets = []) =>
+  Object.fromEntries(
+    toolsets.map((set) => [
+      set.name,
+      createSdkMcpServer({
+        name: set.name,
+        version: '1.0.0',
+        ...(set.instructions ? { instructions: set.instructions } : {}),
+        tools: set.tools.map((t) => tool(t.name, t.description, t.schema, (args, extra) => runTool(t, args, { signal: extra?.signal }))),
+      }),
+    ]),
+  );
 
 /** A tool-less one-shot completion on a small model; the base of titles, commit messages, PR texts. */
 async function oneShot({ prompt, system, model = 'haiku', timeoutMs = 90000, label = 'completion' }) {
@@ -136,7 +151,7 @@ async function oneShot({ prompt, system, model = 'haiku', timeoutMs = 90000, lab
   return out;
 }
 
-export function createClaudeProvider({ browser, stats, log = () => {} }) {
+export function createClaudeProvider({ stats, log = () => {} }) {
   const outputFiles = new Set();
   const live = new Set();
   let probeCache = null;
@@ -146,13 +161,6 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
       stats?.recordTurn({ cwd }, msg);
     } catch {}
   };
-
-  /** Desk tools every session gets: session helpers, the built-in browser and core-hosted servers. */
-  const deskServers = (key, mcp) => ({
-    ccd_session: sessionToolsServer(),
-    ...(browser ? { 'desk-browser': browser.mcpServer(key) } : {}),
-    ...mcpConfig(mcp),
-  });
 
   /** Runs fn(query) on a live session if there is one, else on a short-lived one. */
   async function withQuery(fn) {
@@ -195,7 +203,7 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
       modes: ['default', 'acceptEdits', 'auto', 'plan', 'bypassPermissions'],
     },
 
-    /** Starts a run. spec: { threadId, cwd, dirs, model, effort, permissionMode, resume, resumeAt, instructions, mcp, chrome }. */
+    /** Starts a run. spec: { threadId, cwd, dirs, model, effort, permissionMode, resume, resumeAt, instructions, tools, chrome }. */
     open(spec, sink) {
       const input = new InputQueue();
       let stderrTail = '';
@@ -224,8 +232,8 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
           resume: spec.resume || undefined,
           // Conversation rewind: continue the session from an earlier message.
           ...(spec.resume && spec.resumeAt ? { resumeSessionAt: spec.resumeAt } : {}),
-          // Built-in browser tools (mcp__desk-browser__*) and, if enabled, Claude in Chrome.
-          mcpServers: deskServers(spec.threadId, spec.mcp),
+          // Desk tools (session helpers, built-in browser, other agents) and, if enabled, Claude in Chrome.
+          mcpServers: sdkServers(spec.tools),
           ...(spec.chrome != null ? { extraArgs: spec.chrome ? { chrome: null } : { 'no-chrome': null } } : {}),
           canUseTool: async (toolName, toolInput, opts) => {
             const r = await sink.approval({
@@ -255,6 +263,8 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
       });
       const run = { q };
       live.add(run);
+      // A resumed session keeps its original system prompt, so handed-over context rides with the first message.
+      let reminder = spec.resume && spec.instructions ? spec.instructions : null;
 
       (async () => {
         let error = null;
@@ -277,7 +287,8 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
 
       return Object.assign(run, {
         send({ text, images, uuid, priority }) {
-          input.push(userMessage(text, images, uuid, priority));
+          input.push(userMessage(text, images, uuid, priority, reminder));
+          reminder = null;
         },
         async configure({ model, effort, permissionMode }) {
           if (model !== undefined) await q.setModel(model);
@@ -425,7 +436,7 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
      * A full Claude Code task without a UI thread; resolves with its final text. The session is saved,
      * so it shows up in the sidebar. onEvent receives desk events.
      */
-    async runHeadless({ prompt, cwd, model, effort, permissionMode = 'acceptEdits', timeoutMs = 30 * 60000, onEvent, resume, dirs, abortController, canUseTool, mcp, instructions }) {
+    async runHeadless({ prompt, cwd, model, effort, permissionMode = 'acceptEdits', timeoutMs = 30 * 60000, onEvent, resume, dirs, abortController, canUseTool, tools, instructions }) {
       const q = query({
         prompt: String(prompt),
         options: {
@@ -441,7 +452,7 @@ export function createClaudeProvider({ browser, stats, log = () => {} }) {
           ...(canUseTool ? { canUseTool } : {}),
           ...(dirs?.length ? { additionalDirectories: dirs } : {}),
           systemPrompt: { type: 'preset', preset: 'claude_code', ...(instructions ? { append: instructions } : {}) },
-          mcpServers: deskServers(`headless-${Date.now()}`, mcp),
+          mcpServers: sdkServers(tools),
         },
       });
       const translator = createTranslator('live');

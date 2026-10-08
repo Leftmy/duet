@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { OctagonX, PanelLeft, RefreshCw, X } from 'lucide-react';
 import { useStore } from './store';
+import type { ProviderId } from './types';
 import { t, useLang } from './i18n';
 import { Sidebar } from './components/Sidebar';
 import { ThreadView } from './components/ThreadView';
@@ -131,6 +132,15 @@ export function App() {
           s.setPanelTab(tab);
           s.setSettings({ changesOpen: true });
         }
+      } else if (ctrl && !e.shiftKey && e.code === 'Period') {
+        // Quick swap: move the open chat to the next available agent, conversation included.
+        e.preventDefault();
+        const s = useStore.getState();
+        const t = s.threads[s.activeId];
+        const ids = Object.entries(s.providers)
+          .filter(([, p]) => p.available)
+          .map(([id]) => id as ProviderId);
+        if (t && ids.length > 1) s.switchProvider(t.id, ids[(ids.indexOf(t.provider) + 1) % ids.length]);
       } else if (ctrl && e.key === ',') {
         e.preventDefault();
         useStore.setState({ settingsOpen: true });

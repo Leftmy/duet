@@ -8,12 +8,15 @@ import { filesToMentions, insertAtCaret } from '../features/mentions/dropFiles';
 import type { ImageAttachment, Thread } from '../types';
 import { useStore } from '../store';
 import { fileToAttachment, uid } from '../lib/format';
-import { ModelPicker, PermissionPicker } from './Pickers';
+import { ModelPicker, PermissionPicker, ProviderPicker } from './Pickers';
 import { ApprovalCard } from './ApprovalCard';
 import { spring } from './Popover';
 import { TasksBar } from './TasksBar';
 import { ContextRing } from './ContextRing';
 import { t } from '../i18n';
+
+
+const NO_COMMANDS: { name: string; description: string; argumentHint?: string }[] = [];
 
 export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   const send = useStore((s) => s.send);
@@ -21,7 +24,8 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   const setDraft = useStore((s) => s.setDraft);
   const setDraftImages = useStore((s) => s.setDraftImages);
   const removeQueued = useStore((s) => s.removeQueued);
-  const commands = useStore((s) => s.commands);
+  const commands = useStore((s) => (s.providers[thread.provider]?.caps?.slashCommands === false ? NO_COMMANDS : s.commands));
+  const agentName = useStore((s) => s.providers[thread.provider]?.label ?? 'Claude');
   const followUp = useStore((s) => s.settings.followUp);
   const review = useStore((s) => s.review[thread.id]);
   const sendReview = useStore((s) => s.sendReview);
@@ -128,7 +132,7 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
               {t('composer.clear')}
             </button>
             <button className="btn primary" onClick={() => sendReview(thread.id)}>
-              {t('composer.sendToClaude')}
+              {t('composer.sendToClaude', { name: agentName })}
             </button>
           </motion.div>
         )}
@@ -241,9 +245,9 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
           placeholder={
             running
               ? followUp === 'steer'
-                ? t('composer.placeholderSteer')
-                : t('composer.placeholderQueue')
-              : t('composer.placeholder')
+                ? t('composer.placeholderSteer', { name: agentName })
+                : t('composer.placeholderQueue', { name: agentName })
+              : t('composer.placeholder', { name: agentName })
           }
           onChange={(e) => {
             setText(e.target.value);
@@ -301,6 +305,7 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
               e.target.value = '';
             }}
           />
+          <ProviderPicker thread={thread} />
           <PermissionPicker thread={thread} />
           <div className="spacer" />
           <MicButton

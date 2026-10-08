@@ -145,6 +145,8 @@ export interface AgentRun {
 export interface Turn {
   kind: 'turn';
   id: string;
+  /** Agent that produced this turn (chats can move between agents). */
+  provider?: ProviderId;
   items: Item[];
   startedAt: number;
   endedAt?: number;
@@ -269,6 +271,12 @@ export interface Thread {
   id: string;
   /** Agent the chat talks to. */
   provider: ProviderId;
+  /** Latest session of every agent this chat has used (to resume one when switching back). */
+  sessions?: Partial<Record<ProviderId, string>>;
+  /** Set when the chat just moved to another agent: the next message carries the conversation over. */
+  handoff?: { from: ProviderId };
+  /** The chat's title still has to be given to its new session (after a switch). */
+  retitle?: boolean;
   sessionId?: string;
   title: string;
   cwd: string;

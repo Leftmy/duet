@@ -31,6 +31,8 @@ export function userTextOf(content) {
   if (typeof content === 'string') text = content;
   else if (Array.isArray(content)) {
     for (const b of content) {
+      // Hidden context blocks (e.g. a handoff from another agent) ride along with the user's own text.
+      if (b?.type === 'text' && content.length > 1 && META_PREFIXES.some((p) => b.text.trimStart().startsWith(p))) continue;
       if (b?.type === 'text') text += (text ? '\n' : '') + b.text;
       else if (b?.type === 'image' && b.source?.type === 'base64') images.push({ id: randomUUID(), mediaType: b.source.media_type, data: b.source.data });
     }

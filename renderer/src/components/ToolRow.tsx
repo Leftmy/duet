@@ -235,6 +235,8 @@ function Details({ item, cwd }: { item: ToolItem; cwd?: string }) {
 export const ToolRow = memo(function ToolRow({ item, cwd }: { item: ToolItem; cwd?: string }) {
   const [open, setOpen] = useState(false);
   const activeId = useStore((s) => s.activeId);
+  // Moving a running call to the background is an agent feature (Claude Code), not a generic one.
+  const canBackground = useStore((s) => s.providers[s.threads[s.activeId]?.provider ?? 'claude']?.caps?.backgroundTasks !== false);
   const now = useNow(item.status === 'running');
   const kind = toolKind(item.name);
   const Icon = ICONS[kind];
@@ -267,7 +269,7 @@ export const ToolRow = memo(function ToolRow({ item, cwd }: { item: ToolItem; cw
         )}
         {item.status === 'error' && <span className="step-err">{t('tools.errorBadge')}</span>}
         {elapsed && <span className="step-meta">{elapsed}</span>}
-        {running && (kind === 'shell' || kind === 'agent') && !item.input?.run_in_background && now - item.startedAt > 3000 && (
+        {canBackground && running && (kind === 'shell' || kind === 'agent') && !item.input?.run_in_background && now - item.startedAt > 3000 && (
           <span
             role="button"
             className="step-action"

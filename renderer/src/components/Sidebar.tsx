@@ -93,23 +93,50 @@ function UsageBar({ label, pct, resetsAt }: { label: string; pct: number; resets
   );
 }
 
-/** Collapses continuations of one long conversation ("… (fork 2)") into a single row with older parts. */
-function chainRows(rows: Row[]) {
+/**
+ * Collapses the parts of one conversation into a single row with older parts: sessions linked when a
+ * chat moved to another agent, and continuations of a long conversation ("… (fork 2)").
+ */
+function chainRows(rows: Row[], links: Record<string, string> = {}) {
   rows.sort((a, b) => b.ts - a.ts);
+  // Linked sessions form one group whose newest part leads (a chat can go back to an older session).
+  const root = new Map<string, string>();
+  const find = (k: string): string => {
+    const r = root.get(k) ?? k;
+    return r === k ? k : find(r);
+  };
+  const keys = new Set(rows.map((r) => r.key));
+  for (const [from, to] of Object.entries(links)) if (keys.has(from) && keys.has(to) && find(from) !== find(to)) root.set(find(from), find(to));
+  const absorbed = new Set<string>();
+  const linked = new Map<string, Row[]>();
+  const leaders = new Map<string, Row>();
+  for (const r of rows) {
+    const g = find(r.key);
+    const lead = leaders.get(g);
+    if (!lead) leaders.set(g, r);
+    else {
+      absorbed.add(r.key);
+      linked.set(lead.key, [...(linked.get(lead.key) ?? []), r]);
+    }
+  }
   const heads = new Map<string, Row>();
   const out: Row[] = [];
   for (const r of rows) {
+    if (absorbed.has(r.key)) continue;
+    const parts = [r, ...(linked.get(r.key) ?? [])];
     const base = baseTitle(r.title);
     const head = base ? heads.get(base) : undefined;
-    if (head) (head.older ??= []).push(r);
+    if (head) (head.older ??= []).push(...parts);
     else {
-      const row = { ...r, older: undefined };
+      const row = { ...r, older: parts.length > 1 ? parts.slice(1) : undefined };
       if (base) heads.set(base, row);
       out.push(row);
     }
   }
   return out;
 }
+
+const rowProvider = (r: Row) => r.thread?.provider ?? r.session?.provider ?? 'claude';
 
 const rowKeys = (r: Row) => [r.key, ...(r.older ?? []).map((o) => o.key)];
 
@@ -133,7 +160,7 @@ async function renameRow(row: Row, title: string) {
     const next = title.trim() + (r.title.match(FORK_SUFFIX)?.[0] ?? '');
     const open = Object.values(s.threads).find((t) => t.id === r.key || (t.sessionId && t.sessionId === r.session?.sessionId));
     if (open) s.renameThread(open.id, next);
-    else if (r.session) await window.desk.renameSession(r.session.sessionId, next, r.session.cwd).catch(() => {});
+    else if (r.session) await window.desk.renameSession(r.session.sessionId, next, r.session.cwd, r.session.provider).catch(() => {});
   }
   s.refreshSessions();
 }
@@ -153,7 +180,7 @@ async function deleteRow(row: Row, confirmed = false) {
   for (const r of parts) {
     const open = Object.values(s.threads).find((t) => t.id === r.key || (t.sessionId && t.sessionId === r.session?.sessionId));
     if (open) s.deleteThread(open.id);
-    else if (r.session) await window.desk.deleteSession(r.session.sessionId, r.session.cwd).catch(() => {});
+    else if (r.session) await window.desk.deleteSession(r.session.sessionId, r.session.cwd, r.session.provider).catch(() => {});
   }
   s.archiveChats(rowKeys(row), false);
   s.refreshSessions();
@@ -266,6 +293,7 @@ function ChatRow({
     setMenu(null);
   }, []);
   const shown = part ? t('sidebar.part', { n: part }) : baseTitle(row.title) ? row.title.replace(FORK_SUFFIX, '') : row.title;
+  const agentLabel = useStore((s) => s.providers[rowProvider(row)]?.label ?? rowProvider(row));
 
   const selected = useSelection((x) => Boolean(x.rows[row.key]));
   const selecting = useSelection((x) => Object.keys(x.rows).length > 0);
@@ -344,6 +372,11 @@ function ChatRow({
           />
         ) : (
           <span className="truncate">{shown}</span>
+        )}
+        {!renaming && rowProvider(row) !== 'claude' && (
+          <span className="agent-badge" title={t('sidebar.agentHint', { name: agentLabel })}>
+            {agentLabel}
+          </span>
         )}
         {!part && row.older?.length ? (
           <span
@@ -648,8 +681,6 @@ export function Sidebar() {
   const threads = useStore((s) => s.threads);
   const activeId = useStore((s) => s.activeId);
   const settings = useStore((s) => s.settings);
-  const account = useStore((s) => s.account);
-  const usage = useStore((s) => s.usage);
   const search = useStore((s) => s.search);
   const worktrees = useStore((s) => s.worktrees);
   const { setSearch, newThread, setSettings } = useStore.getState();
@@ -661,6 +692,12 @@ export function Sidebar() {
   const PROJECT_LIMIT = 10;
 
   const active = threads[activeId];
+  // Account and plan limits of the agent the open chat uses.
+  const agent = active?.provider ?? settings.provider ?? 'claude';
+  const claudeAccount = useStore((s) => s.account);
+  const agentInfo = useStore((s) => s.providers[agent]);
+  const account = agent === 'claude' ? claudeAccount : agentInfo?.account ?? {};
+  const usage = useStore((s) => s.usageBy[agent] ?? (agent === 'claude' ? s.usage : {}));
 
   const { groups, archivedRows, pinnedRows } = useMemo(() => {
     const byKey = new Map<string, Group>();
@@ -721,9 +758,9 @@ export function Sidebar() {
     const list = [...byKey.values()]
       .filter((g) => g.rows.length || (g.project && !q))
       .sort((a, b) => Number(Boolean(b.project)) - Number(Boolean(a.project)) || b.latest - a.latest);
-    for (const g of list) g.rows = chainRows(g.rows);
+    for (const g of list) g.rows = chainRows(g.rows, settings.links);
     const order = (r: Row) => settings.pinned.indexOf(r.key);
-    return { groups: list, archivedRows: chainRows(archived), pinnedRows: pinned.sort((a, b) => order(a) - order(b)) };
+    return { groups: list, archivedRows: chainRows(archived, settings.links), pinnedRows: pinned.sort((a, b) => order(a) - order(b)) };
   }, [sessions, threads, search, worktrees, settings]);
 
   const runningIds = useMemo(
@@ -792,7 +829,7 @@ export function Sidebar() {
   return (
     <div className="sidebar-inner">
       <div className="side-head">
-        <span className="brand">Claude</span>
+        <span className="brand">Duet</span>
         <div className="spacer" />
         <button className="icon-btn" title={t('sidebar.searchAllChats')} onClick={() => openSearch()}>
           <TextSearch size={15} />
@@ -922,7 +959,7 @@ export function Sidebar() {
         <div className="account">
           <span className="avatar">{initials}</span>
           <div className="account-text">
-            <span className="truncate">{account.email ?? 'Claude Code'}</span>
+            <span className="truncate">{account.email ?? agentInfo?.label ?? 'Claude Code'}</span>
             <span className="muted small">{account.subscriptionType ?? usage.plan ?? ''}</span>
           </div>
           <button className="icon-btn" title={t('sidebar.settings')} onClick={() => useStore.setState({ settingsOpen: true })}>

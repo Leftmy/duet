@@ -56,5 +56,6 @@
   "errorBadge": "error",
   "toBackgroundHint": "Move to background — Claude keeps working while the task continues",
   "toBackground": "Background",
-  "openInEditor": "Open in editor"
+  "openInEditor": "Open in editor",
+  "deletedFile": "Deleted"
 }

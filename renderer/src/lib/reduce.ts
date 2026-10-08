@@ -1,6 +1,6 @@
 // Folds desk events (live stream or a saved transcript) into UI entries. Provider-neutral:
 // every agent provider translates its own messages into DeskEvent (see ../events.ts).
-import type { AgentRun, BgTask, Entry, Item, Thread, Turn } from '../types';
+import type { AgentRun, BgTask, Entry, Item, ProviderId, Thread, Turn } from '../types';
 import type { DeskEvent } from '../events';
 import { subStepLabel } from './tools';
 import { uid } from './format';
@@ -8,14 +8,18 @@ import { t as tr } from '../i18n';
 
 class TurnEditor {
   private turn: Turn | null = null;
-  constructor(private entries: Entry[], private now: number) {}
+  constructor(
+    private entries: Entry[],
+    private now: number,
+    private provider?: ProviderId,
+  ) {}
 
   get(): Turn {
     if (this.turn) return this.turn;
     const idx = this.entries.length - 1;
     const last = this.entries[idx];
     if (!last || last.kind !== 'turn' || last.done) {
-      this.turn = { kind: 'turn', id: uid(), items: [], startedAt: this.now, done: false };
+      this.turn = { kind: 'turn', id: uid(), items: [], startedAt: this.now, done: false, ...(this.provider ? { provider: this.provider } : {}) };
       this.entries.push(this.turn);
     } else {
       this.turn = { ...last, items: [...last.items] };
@@ -285,7 +289,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
   const now = Date.now();
   const historical = Boolean(opts.history);
   const t: Thread = { ...t0, entries: [...t0.entries] };
-  const ed = new TurnEditor(t.entries, now);
+  const ed = new TurnEditor(t.entries, now, t.provider);
   /** Adds an item to the open turn, or to the last turn when the agent is idle. */
   const pushFeed = (item: Item) => {
     if (ed.peek()) return ed.push(item);
@@ -402,8 +406,8 @@ function closeTurn(entries: Entry[], historical: boolean) {
 }
 
 /** Builds entries and subagent records from a saved transcript's events. */
-export function fromHistory(events: DeskEvent[]): { entries: Entry[]; agents: Record<string, AgentRun> } {
-  let t = { entries: [], agents: {}, tasks: {}, status: 'idle' } as unknown as Thread;
+export function fromHistory(events: DeskEvent[], provider?: ProviderId): { entries: Entry[]; agents: Record<string, AgentRun> } {
+  let t = { entries: [], agents: {}, tasks: {}, status: 'idle', provider } as unknown as Thread;
   for (const ev of events) t = applyEvent(t, ev, { history: true });
   const entries = [...t.entries];
   closeTurn(entries, true);

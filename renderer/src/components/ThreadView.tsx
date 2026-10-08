@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AppWindow,
@@ -23,7 +23,7 @@ import {
   TestTubes,
   Trash2,
 } from 'lucide-react';
-import type { Entry, Thread } from '../types';
+import type { Entry, ProviderId, Thread } from '../types';
 import type { RevealRequest } from '../features/search/SearchModal';
 import { projectName, projectOf, useStore } from '../store';
 import { useStickToBottom } from '../lib/hooks';
@@ -505,6 +505,27 @@ function useEntryWindow(thread: Thread, scrollRef: React.RefObject<HTMLDivElemen
   return { visible: hidden ? thread.entries.slice(hidden) : thread.entries, hidden };
 }
 
+/** Agent of the closest turn before index i. */
+function agentBefore(entries: Entry[], i: number): ProviderId | undefined {
+  for (let k = i - 1; k >= 0; k--) {
+    const e = entries[k];
+    if (e.kind === 'turn') return e.provider;
+  }
+  return undefined;
+}
+
+/** Marks where another agent took over the chat. */
+function AgentDivider({ provider }: { provider: ProviderId }) {
+  const label = useStore((s) => s.providers[provider]?.label ?? provider);
+  return (
+    <div className="chapter agent-divider">
+      <span className="chapter-line" />
+      <span className="chapter-title">{label}</span>
+      <span className="chapter-line" />
+    </div>
+  );
+}
+
 export function ThreadView({ thread, focused = true, split = false }: { thread: Thread; focused?: boolean; split?: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const changesOpen = useStore((s) => s.settings.changesOpen);
@@ -548,13 +569,16 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
                       ))}
                     </div>
                   )}
-                  {visible.map((e) =>
-                    e.kind === 'user' ? (
-                      <UserBubble key={e.id} entry={e} />
-                    ) : (
-                      <TurnView key={e.id} turn={e} cwd={thread.cwd} activity={e.id === lastTurnId ? thread.activity : undefined} />
-                    ),
-                  )}
+                  {visible.map((e, i) => {
+                    if (e.kind === 'user') return <UserBubble key={e.id} entry={e} />;
+                    const prev = agentBefore(visible, i);
+                    return (
+                      <Fragment key={e.id}>
+                        {prev && e.provider && prev !== e.provider && <AgentDivider provider={e.provider} />}
+                        <TurnView turn={e} cwd={thread.cwd} activity={e.id === lastTurnId ? thread.activity : undefined} />
+                      </Fragment>
+                    );
+                  })}
                   <div className="column-end" />
                 </div>
               </div>

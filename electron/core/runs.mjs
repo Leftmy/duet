@@ -4,7 +4,11 @@
 import { randomUUID } from 'node:crypto';
 import { t as tr } from '../i18n.mjs';
 
-export function createCore({ emit, registry, browser, log = () => {} }) {
+/**
+ * toolsFor(key) → desk toolsets (core/tools.mjs) a run gets; key is the thread id (it scopes per-chat
+ * state such as the browser page).
+ */
+export function createCore({ emit, registry, browser, toolsFor = () => [], log = () => {} }) {
   const threads = new Map();
   // Main-process listeners of one thread's events (e.g. the Telegram bot following a chat it started).
   const observers = new Map();
@@ -67,7 +71,7 @@ export function createCore({ emit, registry, browser, log = () => {} }) {
         resume: t.resume,
         resumeAt: t.resume ? t.resumeAt : undefined,
         instructions: c.instructions,
-        mcp: c.mcp,
+        tools: toolsFor(t.id),
       },
       {
         event(ev) {
@@ -148,7 +152,7 @@ export function createCore({ emit, registry, browser, log = () => {} }) {
     renameSession: (sessionId, title, cwd, provider) => registry.get(provider).renameSession(sessionId, title, cwd),
     deleteSession: (sessionId, cwd, provider) => registry.get(provider).deleteSession(sessionId, cwd),
 
-    send({ threadId, provider, cwd, dirs, model, effort, permissionMode, resume, text, images, uuid, chrome, priority, instructions, mcp }) {
+    send({ threadId, provider, cwd, dirs, model, effort, permissionMode, resume, text, images, uuid, chrome, priority, instructions }) {
       const t = thread(threadId, provider);
       if (provider && provider !== t.provider) {
         // The chat moved to another agent: the old run ends, the new one starts fresh or resumes its own session.
@@ -158,7 +162,7 @@ export function createCore({ emit, registry, browser, log = () => {} }) {
         t.resume = resume;
       }
       if (!t.run) {
-        t.config = { cwd, dirs, model, effort, permissionMode, chrome, instructions, mcp };
+        t.config = { cwd, dirs, model, effort, permissionMode, chrome, instructions };
         t.resume = resume || t.sessionId || t.resume;
         start(t);
       }
@@ -231,10 +235,21 @@ export function createCore({ emit, registry, browser, log = () => {} }) {
       return t.run.rewindFiles(uuid, dryRun);
     },
 
-    /** Drops the conversation after resumeAt (null = from the very start); the next message continues from there. */
-    rewindConversation({ threadId, resumeAt }) {
-      const t = thread(threadId);
+    /**
+     * Drops the end of the conversation; the next message continues from there. Anchor agents (Claude)
+     * resume at resumeAt (null = from the very start); turn-based ones (Codex) drop the last dropTurns turns.
+     */
+    async rewindConversation({ threadId, resumeAt, dropTurns, sessionId, provider }) {
+      const t = thread(threadId, provider);
       stop(t);
+      const p = registry.get(provider ?? t.provider);
+      if (p.caps.rollback === 'turns') {
+        const sid = sessionId || t.sessionId || t.resume;
+        if (sid && dropTurns > 0) await p.rollback(sid, dropTurns);
+        t.resume = sid;
+        t.resumeAt = undefined;
+        return true;
+      }
       if (resumeAt) {
         t.resume = t.sessionId || t.resume;
         t.resumeAt = resumeAt;
@@ -287,9 +302,10 @@ export function createCore({ emit, registry, browser, log = () => {} }) {
 
     closeAll() {
       for (const id of [...threads.keys()]) core.closeThread(id);
+      for (const p of registry.all()) p.close?.();
     },
 
-    runHeadless: ({ provider, ...opts }) => registry.get(provider).runHeadless(opts),
+    runHeadless: ({ provider, ...opts }) => registry.get(provider).runHeadless({ tools: toolsFor(`headless-${randomUUID()}`), ...opts }),
     mcpStatus: () => registry.get('claude').mcpStatus(),
     mcpReconnect: (name) => registry.get('claude').mcpReconnect(name),
 

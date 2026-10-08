@@ -1,5 +1,5 @@
 {
-  "permTitle": "Как подтверждать действия Claude?",
+  "permTitle": "Как подтверждать действия {name}?",
   "reset": "Сбросить",
   "chooseModel": "Выбрать модель",
   "hideLegacy": "Скрыть прошлые версии",
@@ -25,5 +25,9 @@
   "folders": "Папки",
   "chooseFolder": "Выбрать папку…",
   "createProject": "Создать проект…",
-  "createProjectHint": "Несколько папок под одним именем"
+  "createProjectHint": "Несколько папок под одним именем",
+  "agentTitle": "Агент",
+  "switchAgent": "Сменить агента",
+  "switchHint": "Продолжить этот чат — контекст переносится",
+  "agentUnavailable": "Недоступен: {error}"
 }

@@ -60,5 +60,6 @@
   "errorBadge": "ошибка",
   "toBackgroundHint": "Перевести в фон — Claude продолжит работу, а задача будет выполняться дальше",
   "toBackground": "В фон",
-  "openInEditor": "Открыть в редакторе"
+  "openInEditor": "Открыть в редакторе",
+  "deletedFile": "Удалил"
 }

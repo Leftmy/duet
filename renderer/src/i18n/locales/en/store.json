@@ -41,5 +41,8 @@
   "forked": "Chat forked",
   "forkFailed": "Couldn't fork: {error}",
   "reviewPrompt": "Review comments on the changes — please fix:",
-  "agentsFailed": "Couldn't load agents: {error}"
+  "agentsFailed": "Couldn't load agents: {error}",
+  "handingOver": "Handing the conversation over…",
+  "switchWhileRunning": "Wait for the current answer to finish (or stop it), then switch agents",
+  "switchedTo": "Switched to {name} · the conversation carries over"
 }

@@ -5,6 +5,7 @@ import os from 'node:os';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeCli, createClaudeProvider } from './providers/claude/index.mjs';
+import { createCodexProvider } from './providers/codex/index.mjs';
 import { createRegistry } from './core/registry.mjs';
 import { createCore } from './core/runs.mjs';
 import { createFiles } from './files.mjs';
@@ -13,6 +14,7 @@ import { createStats } from './stats.mjs';
 import { createWorktrees } from './worktree.mjs';
 import { setLanguage, t } from './i18n.mjs';
 import { createBrowser } from './browser.mjs';
+import { sessionToolset } from './session-tools.mjs';
 import {
   gitBranches,
   gitCheckout,
@@ -158,8 +160,11 @@ const files = createFiles({ emit });
 const terminals = createTerminals({ emit });
 const stats = createStats(app.getPath('userData'));
 const registry = createRegistry();
-registry.register(createClaudeProvider({ browser, stats, log: (...a) => console.log('[claude]', ...a) }));
-const core = createCore({ emit, registry, browser, log: (...a) => console.log('[core]', ...a) });
+registry.register(createClaudeProvider({ stats, log: (...a) => console.log('[claude]', ...a) }));
+registry.register(createCodexProvider({ log: (...a) => console.log('[codex]', ...a) }));
+// Tools the app gives every agent: session helpers and the chat's own browser page.
+const toolsFor = (key) => [sessionToolset(), browser.toolset(key)];
+const core = createCore({ emit, registry, browser, toolsFor, log: (...a) => console.log('[core]', ...a) });
 
 function createWindow() {
   const settings = readSettings();
@@ -277,6 +282,17 @@ handle('app:gitPull', (root) => gitPull(root));
 handle('app:gitDiscard', (root, file, untracked) => gitDiscard(root, file, untracked));
 handle('app:gitBranches', (root) => gitBranches(root));
 handle('app:gitCheckout', (root, branch, create) => gitCheckout(root, branch, create));
+// Condenses the older part of a conversation handed over to another agent.
+handle('desk:summarize', (text) =>
+  core.quickText({
+    prompt:
+      'Summarize this earlier part of a coding session for the agent that will continue it. Keep: the goal, decisions and their reasons, ' +
+      'files and functions touched, commands and their outcomes, open problems and next steps. Plain text, at most 600 words.\n\n' +
+      String(text).slice(0, 120000),
+    system: 'You write precise, compact handoff notes for software engineers.',
+    timeoutMs: 120000,
+  }),
+);
 handle('app:commitMessage', async (root, files) => core.commitMessage(await gitDiffForMessage(root, files)));
 handle('app:openTargets', () => detectOpenTargets().map(({ id, label, labelKey }) => ({ id, label: labelKey ? t(labelKey) : label })));
 handle('app:openIn', (id, cwd) => openIn(id, cwd));

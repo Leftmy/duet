@@ -1,8 +1,8 @@
-// Built-in browser: a WebContentsView docked into the right panel, plus an in-process MCP server
-// ("desk-browser") that lets Claude drive it — navigate, screenshot, read, click, type.
+// Built-in browser: a WebContentsView docked into the right panel, plus a desk toolset
+// ("desk-browser") that lets the agent drive it — navigate, screenshot, read, click, type.
 import { WebContentsView, shell } from 'electron';
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
+import { defineTool } from './core/tools.mjs';
 
 const HOME_URL = 'https://www.google.com/';
 
@@ -114,29 +114,28 @@ export function createBrowser({ getWindow, emit }) {
   const text = (t) => ({ content: [{ type: 'text', text: typeof t === 'string' ? t : JSON.stringify(t, null, 2) }] });
   const settle = () => new Promise((r) => setTimeout(r, 700));
 
-  /** A fresh MCP server per Claude session, bound to that chat's own page. */
-  function mcpServer(key) {
+  /** The browser toolset of one chat, bound to that chat's own page. */
+  function toolset(key) {
     const exec = (js) => ensure(key).webContents.executeJavaScript(js, true);
     const view = () => ensure(key);
-    return createSdkMcpServer({
+    return {
       name: 'desk-browser',
-      version: '1.0.0',
       instructions:
         'Built-in browser panel of the Duet app, visible to the user next to the chat. ' +
         'Use it to open web pages, check local dev servers (http://localhost:...), read docs and verify UI changes. ' +
         'Typical loop: navigate → screenshot or read → click/type → screenshot.',
       tools: [
-        tool('navigate', 'Open a URL (or a search query) in the built-in browser panel.', { url: z.string() }, async ({ url }) => {
+        defineTool('navigate', 'Open a URL (or a search query) in the built-in browser panel.', { url: z.string() }, async ({ url }) => {
           const s = await navigate(key, url);
           await settle();
           return text({ url: view().webContents.getURL(), title: view().webContents.getTitle(), loading: s.loading });
         }),
-        tool('screenshot', 'Take a screenshot of the current page in the built-in browser.', {}, async () => {
+        defineTool('screenshot', 'Take a screenshot of the current page in the built-in browser.', {}, async () => {
           emit('browser:show', { key });
           return { content: [{ type: 'image', data: await screenshot(key), mimeType: 'image/png' }] };
         }),
-        tool('read_page', 'Get the visible text, title, URL and links of the current page.', {}, async () => text(await exec(READ_JS))),
-        tool(
+        defineTool('read_page', 'Get the visible text, title, URL and links of the current page.', {}, async () => text(await exec(READ_JS))),
+        defineTool(
           'click',
           'Click an element by CSS selector, or by its visible text when no selector is given.',
           { selector: z.string().optional(), text: z.string().optional() },
@@ -146,7 +145,7 @@ export function createBrowser({ getWindow, emit }) {
             return text(r);
           },
         ),
-        tool(
+        defineTool(
           'type',
           'Type text into an input or textarea (CSS selector); optionally submit its form.',
           { selector: z.string(), text: z.string(), submit: z.boolean().optional() },
@@ -156,16 +155,16 @@ export function createBrowser({ getWindow, emit }) {
             return text(r);
           },
         ),
-        tool('scroll', 'Scroll the page vertically by a number of pixels (negative = up).', { dy: z.number() }, async ({ dy }) => {
+        defineTool('scroll', 'Scroll the page vertically by a number of pixels (negative = up).', { dy: z.number() }, async ({ dy }) => {
           await exec(`window.scrollBy(0, ${Number(dy) || 0}); 'ok'`);
           return text('scrolled');
         }),
-        tool('back', 'Go back in the built-in browser history.', {}, async () => {
+        defineTool('back', 'Go back in the built-in browser history.', {}, async () => {
           if (view().webContents.navigationHistory.canGoBack()) view().webContents.navigationHistory.goBack();
           await settle();
           return text(stateOf(key));
         }),
-        tool('run_js', 'Run JavaScript in the current page and return the result (JSON-serialisable).', { code: z.string() }, async ({ code }) => {
+        defineTool('run_js', 'Run JavaScript in the current page and return the result (JSON-serialisable).', { code: z.string() }, async ({ code }) => {
           try {
             return text(await exec(code));
           } catch (e) {
@@ -173,11 +172,11 @@ export function createBrowser({ getWindow, emit }) {
           }
         }),
       ],
-    });
+    };
   }
 
   return {
-    mcpServer,
+    toolset,
     state: (key) => stateOf(key),
     navigate,
     setBounds(b) {

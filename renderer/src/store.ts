@@ -17,6 +17,7 @@ import type {
 } from './types';
 import type { ProviderProbe } from './desk';
 import { applyAgentTranscripts, applyEvent, fromHistory } from './lib/reduce';
+import { buildHandoff } from './lib/handoff';
 import { basename, normalizePct, uid } from './lib/format';
 import { askConfirm } from './lib/dialog';
 import { setLang, t as tr, type Lang } from './i18n';
@@ -27,6 +28,10 @@ interface Settings {
   theme: ThemePref;
   /** Agent of new chats. */
   provider: ProviderId;
+  /** Model and effort last used with each agent (Claude's live in model/effort). */
+  providerModels: Partial<Record<ProviderId, { model: string; effort: Effort }>>;
+  /** Chats that moved between agents: session id → the session it continues (another agent's). */
+  links: Record<string, string>;
   model: string;
   effort: Effort;
   permissionMode: PermMode;
@@ -71,6 +76,8 @@ interface State {
   account: Account;
   /** Every registered agent provider: availability, models, capabilities. */
   providers: Record<string, ProviderProbe>;
+  /** Plan limits per agent (usage is Claude's). */
+  usageBy: Partial<Record<ProviderId, UsageSummary>>;
   models: ModelInfo[];
   commands: SlashCommand[];
   mcp: { name: string; status: string; scope?: string; tools: number }[];
@@ -120,6 +127,8 @@ interface State {
   send(id: string, text: string, images: ImageAttachment[]): void;
   interrupt(id: string): void;
   setModel(id: string, model: string): void;
+  /** Moves a chat to another agent; the conversation so far goes with the next message. */
+  switchProvider(id: string, provider: ProviderId): void;
   setEffort(id: string, effort: Effort): void;
   setPermissionMode(id: string, mode: PermMode): void;
   setCwd(id: string, cwd: string): void;
@@ -162,6 +171,8 @@ const DEFAULT_SETTINGS: Settings = {
   language: 'en',
   theme: 'system',
   provider: 'claude',
+  providerModels: {},
+  links: {},
   model: 'default',
   effort: 'high',
   permissionMode: 'default',
@@ -200,17 +211,26 @@ const commonDicts = import.meta.glob('./i18n/locales/*/common.json', { eager: tr
 const DEFAULT_TITLES = new Set(Object.values(commonDicts).map((d) => d.newChat).filter(Boolean));
 const isDefaultTitle = (title: string) => DEFAULT_TITLES.has(title) || title === tr('common.newChat');
 
+/** Model and effort a chat starts with on an agent. */
+function agentDefaults(s: Settings, provider: ProviderId) {
+  if (provider === 'claude') return { model: s.model, effort: s.effort };
+  return s.providerModels[provider] ?? { model: 'default', effort: 'high' as Effort };
+}
+
 function blankThread(s: Settings, cwd?: string, projectId?: string): Thread {
   const project = projectId ? s.projects.find((p) => p.id === projectId) : undefined;
   const d = project?.defaults ?? {};
+  const provider = d.provider ?? s.provider ?? 'claude';
+  const def = agentDefaults(s, provider);
   return {
     id: 'new-' + uid(),
-    provider: d.provider ?? s.provider ?? 'claude',
+    provider,
     title: tr('common.newChat'),
     cwd: cwd ?? project?.folders[0] ?? s.cwd,
     ...(project ? { projectId: project.id } : {}),
-    model: d.model ?? s.model,
-    effort: d.effort ?? s.effort,
+    // A project's default model belongs to its default agent (Claude when unset).
+    model: (d.provider ?? 'claude') === provider ? d.model ?? def.model : def.model,
+    effort: d.effort ?? def.effort,
     permissionMode: d.permissionMode ?? s.permissionMode,
     workMode: d.workMode ?? s.workMode,
     entries: [],
@@ -234,6 +254,16 @@ function usageFromProbe(u: any): UsageSummary {
     weekly: rl.seven_day ? { pct: normalizePct(rl.seven_day.utilization), resetsAt: rl.seven_day.resets_at } : undefined,
   };
 }
+
+/** Codex reports limits as a desk limits event; Claude as its own usage object. */
+function usageFromLimits(ev: any): UsageSummary {
+  const win = (w?: { pct: number; resetsAt?: any }) => (w ? { pct: normalizePct(w.pct), resetsAt: w.resetsAt } : undefined);
+  return { session: win(ev?.session), weekly: win(ev?.weekly) };
+}
+
+/** Models of an agent (Claude's come from the main probe). */
+export const modelsOf = (s: { models: ModelInfo[]; providers: Record<string, ProviderProbe> }, provider: ProviderId): ModelInfo[] =>
+  provider === 'claude' ? s.models : (s.providers[provider]?.models as ModelInfo[]) ?? [];
 
 let sessionsTimer: ReturnType<typeof setTimeout> | undefined;
 let lastUsageAt = 0;
@@ -270,9 +300,33 @@ export const useStore = create<State>()((set, get) => {
   };
 
   const effortFor = (t: Thread) => {
-    const m = get().models.find((x) => x.value === t.model);
+    const m = modelsOf(get(), t.provider).find((x) => x.value === t.model);
     if (m && !m.supportedEffortLevels?.length) return undefined;
     return t.effort;
+  };
+
+  /** Remembers the model and effort picked for an agent; new chats on it start with them. */
+  const rememberModel = (provider: ProviderId, v: { model: string; effort: Effort }) => {
+    if (provider === 'claude') persist({ model: v.model, effort: v.effort });
+    else persist({ providerModels: { ...get().settings.providerModels, [provider]: v } });
+  };
+
+  /** A chat got a new session: its first message, or its first one on another agent after a switch. */
+  const onNewSession = (id: string, before: Thread, sessionId: string) => {
+    const t = get().threads[id];
+    if (!t) return;
+    update(id, (x) => ({ ...x, sessions: { ...(x.sessions ?? {}), [x.provider]: sessionId } }));
+    // Continues another agent's session: link the two so the sidebar shows one chat with one title.
+    const lastOther = [...before.entries].reverse().find((e) => e.kind === 'turn' && e.provider && e.provider !== t.provider);
+    const prev = lastOther?.kind === 'turn' && lastOther.provider ? before.sessions?.[lastOther.provider] : undefined;
+    const s = get().settings;
+    if (!prev || s.links[sessionId]) return;
+    persist({
+      links: { ...s.links, [sessionId]: prev },
+      ...(s.chatProject[prev] ? { chatProject: { ...s.chatProject, [sessionId]: s.chatProject[prev] } } : {}),
+    });
+    // The new session keeps the chat's title; set once the turn ends (its file may not exist yet).
+    if (!isDefaultTitle(t.title)) update(id, (x) => ({ ...x, retitle: true }));
   };
 
   const dispatch = async (id: string, text: string, images: ImageAttachment[]) => {
@@ -286,11 +340,31 @@ export const useStore = create<State>()((set, get) => {
       entries: [
         ...x.entries,
         { kind: 'user', id: uid(), uuid, text, images, ts: now },
-        { kind: 'turn', id: uid(), items: [], startedAt: now, done: false },
+        { kind: 'turn', id: uid(), items: [], startedAt: now, done: false, provider: x.provider },
       ],
       status: 'running',
       activity: undefined,
     }));
+    // The chat just moved to this agent: hand it the conversation it hasn't seen.
+    let instructions: string | undefined;
+    if (t.handoff) {
+      update(id, (x) => ({ ...x, activity: tr('store.handingOver') }));
+      try {
+        const label = (p?: ProviderId) => get().providers[p ?? 'claude']?.label ?? p ?? 'Agent';
+        const status = t.cwd ? await window.desk.gitStatus(t.cwd).catch(() => null) : null;
+        instructions =
+          (await buildHandoff({
+            entries: t.entries,
+            from: t.handoff.from,
+            to: t.provider,
+            cwd: t.cwd,
+            label,
+            changes: status?.files.map((f) => `${f.status[0].toUpperCase()} ${f.path}`),
+            summarize: (text) => window.desk.call<string>('desk:summarize', text),
+          })) ?? undefined;
+      } catch {}
+      update(id, (x) => ({ ...x, handoff: undefined, activity: undefined }));
+    }
     if (t.cwd) {
       const recent = [t.cwd, ...get().settings.recentProjects.filter((p) => p !== t.cwd)].slice(0, 12);
       persist({ recentProjects: recent, cwd: t.cwd });
@@ -326,6 +400,7 @@ export const useStore = create<State>()((set, get) => {
         images,
         uuid,
         chrome: get().settings.chrome,
+        ...(instructions ? { instructions } : {}),
       });
     } catch (e: any) {
       get().toast(tr('store.sendFailed', { error: e?.message ?? e }), 'error');
@@ -339,6 +414,10 @@ export const useStore = create<State>()((set, get) => {
     if (Date.now() - lastUsageAt > 45000) get().refreshUsage();
     const t = get().threads[id];
     if (!t) return;
+    if (t.retitle && t.sessionId) {
+      update(id, (x) => ({ ...x, retitle: false }));
+      window.desk.renameSession(t.sessionId, t.title, t.cwd, t.provider).catch(() => {});
+    }
     window.desk
       .contextUsage(id)
       .then((context) => context && update(id, (x) => ({ ...x, context })))
@@ -371,6 +450,7 @@ export const useStore = create<State>()((set, get) => {
     ready: false,
     account: {},
     providers: {},
+    usageBy: {},
     models: [],
     commands: [],
     mcp: [],
@@ -407,15 +487,20 @@ export const useStore = create<State>()((set, get) => {
 
       window.desk.onEvent(({ threadId, ev }) => {
         if (ev.type === 'limits') {
-          const win = (w?: { pct: number; resetsAt?: any }) => (w ? { pct: normalizePct(w.pct), resetsAt: w.resetsAt } : undefined);
-          if (ev.session) set((s) => ({ usage: { ...s.usage, session: win(ev.session) } }));
-          if (ev.weekly) set((s) => ({ usage: { ...s.usage, weekly: win(ev.weekly) } }));
+          const provider = get().threads[threadId]?.provider ?? 'claude';
+          const patch = usageFromLimits(ev);
+          const merge = (u: UsageSummary = {}) => ({ ...u, ...(patch.session ? { session: patch.session } : {}), ...(patch.weekly ? { weekly: patch.weekly } : {}) });
+          set((s) => ({
+            usageBy: { ...s.usageBy, [provider]: merge(s.usageBy[provider]) },
+            ...(provider === 'claude' ? { usage: merge(s.usage) } : {}),
+          }));
           if (ev.rejected) get().toast(tr('store.limitReached'), 'error');
           return;
         }
         const t = get().threads[threadId];
         if (!t) return;
         set((s) => ({ threads: { ...s.threads, [threadId]: applyEvent(s.threads[threadId], ev) } }));
+        if (ev.type === 'session' && ev.sessionId !== t.sessionId) onNewSession(threadId, t, ev.sessionId);
         if (ev.type === 'turn.end') onResult(threadId);
         if (ev.type === 'task' && ev.op === 'end') {
           const task = get().threads[threadId]?.tasks[ev.id];
@@ -498,7 +583,8 @@ export const useStore = create<State>()((set, get) => {
           const id = thread.id;
           update(id, (x) => ({
             ...x,
-            ...(r.model ? { model: r.model } : {}),
+            // Remote callers (Telegram) pick Claude models.
+            ...(r.model && x.provider === 'claude' ? { model: r.model } : {}),
             ...(r.effort ? { effort: r.effort } : {}),
             ...(r.permissionMode ? { permissionMode: r.permissionMode } : {}),
             ...(r.projectId ? { projectId: r.projectId } : {}),
@@ -537,6 +623,13 @@ export const useStore = create<State>()((set, get) => {
       get().refreshSessions();
       try {
         const p = await window.desk.probe();
+        set((s) => ({
+          usageBy: {
+            ...s.usageBy,
+            claude: usageFromProbe(p.usage),
+            ...Object.fromEntries(Object.entries(p.providers ?? {}).filter(([k, v]) => k !== 'claude' && v.usage).map(([k, v]) => [k, usageFromLimits(v.usage)])),
+          },
+        }));
         set({
           ready: true,
           providers: p.providers ?? {},
@@ -582,9 +675,16 @@ export const useStore = create<State>()((set, get) => {
         if (existing.loaded && !existing.loading) expandChain(existing.id);
         return;
       }
+      const provider = info.provider ?? 'claude';
+      // Earlier parts of a chat that moved between agents: remember each agent's latest session.
+      const sessions: Partial<Record<ProviderId, string>> = {};
+      for (const p of [...(chain ?? [])].reverse()) if (p.segment == null) sessions[p.provider ?? 'claude'] = p.sessionId;
+      sessions[provider] = info.sessionId;
       const t: Thread = {
         ...blankThread(s.settings, info.cwd),
-        provider: info.provider ?? 'claude',
+        ...agentDefaults(s.settings, provider),
+        provider,
+        sessions,
         id: info.sessionId,
         sessionId: info.sessionId,
         title: info.title,
@@ -597,7 +697,7 @@ export const useStore = create<State>()((set, get) => {
       window.desk
         .loadSession(info.sessionId, info.cwd, undefined, t.provider)
         .then((events) => {
-          const { entries, agents } = fromHistory(events);
+          const { entries, agents } = fromHistory(events, t.provider);
           update(t.id, (x) => ({ ...x, entries, agents, loaded: true, loading: false }));
           expandChain(t.id);
         })
@@ -616,7 +716,9 @@ export const useStore = create<State>()((set, get) => {
         const parts = all ? t.chain.slice(start) : [t.chain[start]];
         // Older parts first, so the conversation reads top to bottom.
         const loaded = await Promise.all(parts.map((p) => window.desk.loadSession(p.sessionId, p.cwd, p.segment, p.provider)));
-        const earlier = loaded.reverse().map((events) => fromHistory(events));
+        const earlier = parts
+          .map((p, i) => fromHistory(loaded[i], p.provider ?? 'claude'))
+          .reverse();
         update(id, (x) => ({
           ...x,
           entries: [...earlier.flatMap((h) => h.entries), ...x.entries],
@@ -687,15 +789,56 @@ export const useStore = create<State>()((set, get) => {
     },
 
     setModel(id, model) {
-      update(id, (t) => ({ ...t, model }));
-      persist({ model });
+      const t = get().threads[id];
+      update(id, (x) => ({ ...x, model }));
+      rememberModel(t?.provider ?? 'claude', { model, effort: t?.effort ?? get().settings.effort });
       window.desk.configure({ threadId: id, model }).catch((e) => get().toast(String(e?.message ?? e), 'error'));
     },
 
     setEffort(id, effort) {
-      update(id, (t) => ({ ...t, effort }));
-      persist({ effort });
+      const t = get().threads[id];
+      update(id, (x) => ({ ...x, effort }));
+      rememberModel(t?.provider ?? 'claude', { model: t?.model ?? 'default', effort });
       window.desk.configure({ threadId: id, effort }).catch((e) => get().toast(String(e?.message ?? e), 'error'));
+    },
+
+    switchProvider(id, provider) {
+      const t = get().threads[id];
+      if (!t || t.provider === provider) return;
+      if (t.status === 'running') return get().toast(tr('store.switchWhileRunning'), 'error');
+      const def = agentDefaults(get().settings, provider);
+      const levels = modelsOf(get(), provider).find((m) => m.value === def.model)?.supportedEffortLevels;
+      const effort = !levels?.length || levels.includes(def.effort) ? def.effort : levels.includes('high') ? 'high' : levels[levels.length - 1];
+      if (t.entries.length === 0 && !t.sessionId) {
+        update(id, (x) => ({ ...x, provider, model: def.model, effort }));
+        persist({ provider });
+        return;
+      }
+      const sessions = { ...(t.sessions ?? {}), ...(t.sessionId ? { [t.provider]: t.sessionId } : {}) };
+      const label = get().providers[provider]?.label ?? provider;
+      update(id, (x) => {
+        const entries = [...x.entries];
+        const last = entries[entries.length - 1];
+        if (last?.kind === 'turn') {
+          entries[entries.length - 1] = { ...last, items: [...last.items, { kind: 'notice', id: uid(), text: tr('store.switchedTo', { name: label }), tone: 'info' }] };
+        }
+        return {
+          ...x,
+          entries,
+          provider,
+          model: def.model,
+          effort,
+          sessions,
+          // Back on an agent that already worked here: continue its own session.
+          sessionId: sessions[provider],
+          handoff: { from: t.provider },
+          // Every session of the chat carries the chat's title.
+          retitle: !isDefaultTitle(x.title),
+          approvals: [],
+        };
+      });
+      // The next message starts the new agent; the old one's process can go now.
+      window.desk.closeThread(id).catch(() => {});
     },
 
     setPermissionMode(id, permissionMode) {
@@ -837,7 +980,8 @@ export const useStore = create<State>()((set, get) => {
           const threads = { ...s.threads };
           for (const t of Object.values(threads)) {
             const info = t.sessionId && sessions.find((x) => x.sessionId === t.sessionId);
-            if (info && info.title && info.title !== t.title && t.entries.length > 0) {
+            // A chat that just moved agents keeps its own title until its new session gets it.
+            if (info && info.title && info.title !== t.title && t.entries.length > 0 && !t.retitle) {
               threads[t.id] = { ...t, title: info.title };
             }
           }
@@ -921,13 +1065,17 @@ export const useStore = create<State>()((set, get) => {
           done.push(res.filesChanged?.length ? tr('store.rewoundCodeFiles', { count: res.filesChanged.length }) : tr('store.rewoundCode'));
         }
         if (mode === 'both' || mode === 'conversation') {
-          const resumeAt = prevTurn && prevTurn.kind === 'turn' ? prevTurn.lastUuid ?? null : null;
-          if (idx > 0 && !resumeAt) throw new Error(tr('store.noResumePoint'));
-          await window.desk.rewindConversation({ threadId: id, resumeAt });
+          const byTurns = get().providers[t.provider]?.caps?.rollback === 'turns';
+          // Agents that drop whole turns: count this agent's turns from the rewound message on.
+          const dropTurns = t.entries.slice(idx).filter((e) => e.kind === 'turn' && (e.provider ?? t.provider) === t.provider).length;
+          const resumeAt = byTurns ? null : prevTurn && prevTurn.kind === 'turn' ? prevTurn.lastUuid ?? null : null;
+          if (!byTurns && idx > 0 && !resumeAt) throw new Error(tr('store.noResumePoint'));
+          await window.desk.rewindConversation({ threadId: id, resumeAt, dropTurns, sessionId: t.sessionId, provider: t.provider });
+          const keepSession = byTurns ? t.entries.slice(0, idx).some((e) => e.kind === 'turn' && (e.provider ?? t.provider) === t.provider) : Boolean(resumeAt);
           update(id, (x) => ({
             ...x,
             entries: x.entries.slice(0, idx),
-            ...(resumeAt ? {} : { sessionId: undefined }),
+            ...(keepSession ? {} : { sessionId: undefined }),
             status: 'idle',
             approvals: [],
             queue: [],
