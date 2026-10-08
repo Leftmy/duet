@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowRight, Check, ChevronRight, CornerDownLeft, MessageSquare, Sparkles, Square, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, CornerDownLeft, MessageSquare, Sparkles, Square, X, ChevronUp } from 'lucide-react';
 import type { AgentEventItem, AgentMessageItem, AgentRun, Thread, ToolItem } from '../types';
 import { useStore } from '../store';
 import { duration } from '../lib/format';
@@ -126,13 +126,14 @@ export function AgentEventRow({ item }: { item: AgentEventItem }) {
 /** Message card between lead Claude and an agent (task, follow-up, report). */
 export function AgentMessageCard({ item }: { item: AgentMessageItem }) {
   const agent = useAgent(item.agentId);
+  const lead = useStore((s) => s.providers[s.threads[s.activeId]?.provider ?? 'claude']?.label ?? 'Claude');
   const [full, setFull] = useState(item.dir === 'from' || item.text.length < 900);
   return (
     <div className={`agent-bubble ${item.dir}`} style={{ borderLeftColor: agentColor(agent) }}>
       <div className="agent-bubble-head">
         {item.dir === 'to' ? (
           <>
-            <span>Claude</span>
+            <span>{lead}</span>
             <ArrowRight size={12} />
             <AgentName agent={agent} />
           </>
@@ -140,7 +141,7 @@ export function AgentMessageCard({ item }: { item: AgentMessageItem }) {
           <>
             <AgentName agent={agent} />
             <CornerDownLeft size={12} />
-            <span>Claude</span>
+            <span>{lead}</span>
           </>
         )}
         {item.label && <span className="chip">{item.label}</span>}
@@ -171,7 +172,7 @@ function AgentChip({ agent, active, onClick }: { agent: AgentRun; active: boolea
   );
 }
 
-function AgentDetail({ thread, agent }: { thread: Thread; agent: AgentRun }) {
+function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: AgentRun; onCollapse: () => void }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopTask = useStore((s) => s.stopTask);
   const running = agent.status === 'running';
@@ -206,6 +207,9 @@ function AgentDetail({ thread, agent }: { thread: Thread; agent: AgentRun }) {
             <Square size={10} fill="currentColor" /> {t('agents.stop')}
           </button>
         )}
+        <button className="icon-btn sm" title={t('agents.collapse')} onClick={onCollapse}>
+          <ChevronUp size={14} />
+        </button>
       </div>
       <div className="agent-scroll" ref={scrollRef}>
         <div className="items">
@@ -225,21 +229,75 @@ function AgentDetail({ thread, agent }: { thread: Thread; agent: AgentRun }) {
   );
 }
 
+/** All agents as rows (the view with the conversation hidden). */
+function AgentList({ agents, onOpen }: { agents: AgentRun[]; onOpen: (id: string) => void }) {
+  const now = useNow(agents.some((a) => a.status === 'running'));
+  return (
+    <div className="agent-list">
+      {agents.map((a) => {
+        const running = a.status === 'running';
+        return (
+          <button key={a.id} className="agent-list-row" onClick={() => onOpen(a.id)} title={t('agents.openConversation')}>
+            <span className="agent-dot" style={{ background: agentColor(a) }}>
+              {running && <span className="agent-dot-pulse" style={{ background: agentColor(a) }} />}
+            </span>
+            <span className="agent-list-text">
+              <span className="agent-list-name">
+                <span className="truncate">{a.name}</span>
+                {a.type && <span className="chip">{a.type}</span>}
+              </span>
+              <span className={`muted small truncate ${running ? 'shimmer' : ''}`}>
+                {statusText(a)}
+                {a.startedAt > 0 && ` · ${duration((a.endedAt ?? now) - a.startedAt)}`}
+                {a.toolUses ? ` · ${t('agents.steps', { count: a.toolUses })}` : ''}
+                {running && a.progress ? ` · ${a.progress}` : ''}
+              </span>
+            </span>
+            {!running && (a.status === 'done' ? <Check size={13} className="ok-icon" /> : <X size={13} className="err-icon" />)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AgentsTab({ thread }: { thread: Thread }) {
   const focus = useStore((s) => s.focusAgent);
   const openAgent = useStore((s) => s.openAgent);
+  // The conversation view can be hidden to see every agent at once; remembered across chats.
+  const collapsed = useStore((s) => s.settings.agentsCollapsed);
+  const setCollapsed = (v: boolean) => useStore.getState().setSettings({ agentsCollapsed: v });
   // Newest first: by start time, then by creation index (color) when timestamps tie or are missing.
   const agents = Object.values(thread.agents).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0) || b.color - a.color);
   const selected = (focus && thread.agents[focus]) || agents.find((a) => a.status === 'running') || agents[0];
   if (!agents.length) return <div className="changes-empty muted">{t('agents.empty')}</div>;
+  if (collapsed) {
+    return (
+      <div className="agents-tab">
+        <AgentList
+          agents={agents}
+          onOpen={(id) => {
+            setCollapsed(false);
+            openAgent(id);
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="agents-tab">
       <div className="agent-chips">
         {agents.map((a) => (
-          <AgentChip key={a.id} agent={a} active={a.id === selected?.id} onClick={() => openAgent(a.id)} />
+          <AgentChip
+            key={a.id}
+            agent={a}
+            active={a.id === selected?.id}
+            // Clicking the open agent again hides its conversation.
+            onClick={() => (a.id === selected?.id ? setCollapsed(true) : openAgent(a.id))}
+          />
         ))}
       </div>
-      {selected && <AgentDetail key={selected.id} thread={thread} agent={selected} />}
+      {selected && <AgentDetail key={selected.id} thread={thread} agent={selected} onCollapse={() => setCollapsed(true)} />}
     </div>
   );
 }

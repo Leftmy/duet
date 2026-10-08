@@ -11,7 +11,12 @@ import { t } from '../i18n';
 
 const isRunning = (task: BgTask) => task.status === 'running' || task.status === 'pending' || task.status === 'paused';
 
-const TaskRow = memo(function TaskRow({ threadId, task }: { threadId: string; task: BgTask }) {
+/** Finished tasks stay in the bar above the composer this long; after that only in the Tasks tab. */
+const RECENT_MS = 2 * 60_000;
+
+const byRecency = (a: BgTask, b: BgTask) => Number(isRunning(b)) - Number(isRunning(a)) || (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt);
+
+const TaskRow = memo(function TaskRow({ threadId, task, canHide = true }: { threadId: string; task: BgTask; canHide?: boolean }) {
   const stopTask = useStore((s) => s.stopTask);
   const dismiss = useStore((s) => s.dismissTask);
   const running = isRunning(task);
@@ -60,11 +65,11 @@ const TaskRow = memo(function TaskRow({ threadId, task }: { threadId: string; ta
             <Square size={10} fill="currentColor" />
             {t('tasks.stop')}
           </button>
-        ) : (
+        ) : canHide ? (
           <button className="icon-btn sm" title={t('common.hide')} onClick={() => dismiss(threadId, task.id)}>
             <X size={12} />
           </button>
-        )}
+        ) : null}
       </div>
       <AnimatePresence initial={false}>
         {open && (
@@ -90,17 +95,32 @@ const TaskRow = memo(function TaskRow({ threadId, task }: { threadId: string; ta
 
 export function TasksBar({ thread }: { thread: Thread }) {
   const [collapsed, setCollapsed] = useState(false);
-  const tasks = Object.values(thread.tasks)
-    .filter((x) => x.background && !x.dismissed)
-    .sort((a, b) => Number(isRunning(b)) - Number(isRunning(a)) || b.startedAt - a.startedAt);
+  const all = Object.values(thread.tasks).filter((x) => x.background && !x.dismissed);
+  // Keep ticking while a finished task is about to leave the bar.
+  const now = useNow(all.some((x) => !isRunning(x)));
+  const tasks = all.filter((x) => isRunning(x) || now - (x.endedAt ?? x.startedAt) < RECENT_MS).sort(byRecency);
   if (!tasks.length) return null;
   const running = tasks.filter(isRunning).length;
+  const openTab = () => {
+    useStore.getState().setPanelTab('tasks');
+    useStore.getState().setSettings({ changesOpen: true });
+  };
   return (
     <motion.div className="tasks" layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={spring}>
       <button className="tasks-head" onClick={() => setCollapsed((v) => !v)}>
         <ChevronRight size={13} className={`task-chevron ${collapsed ? '' : 'is-open'}`} />
         <span>{t('tasks.title')}</span>
         <span className="muted">{running ? t('tasks.running', { count: running }) : t('tasks.allDone')}</span>
+        <span
+          role="button"
+          className="side-more"
+          onClick={(e) => {
+            e.stopPropagation();
+            openTab();
+          }}
+        >
+          {t('tasks.showAll')}
+        </span>
       </button>
       <AnimatePresence initial={false}>
         {!collapsed && (
@@ -114,5 +134,22 @@ export function TasksBar({ thread }: { thread: Thread }) {
         )}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+/** Right-panel tab: every background task of the chat, running ones first. */
+export function TasksTab({ thread }: { thread: Thread }) {
+  const tasks = Object.values(thread.tasks)
+    .filter((x) => x.background)
+    .sort(byRecency);
+  if (!tasks.length) return <div className="changes-empty muted">{t('tasks.empty')}</div>;
+  return (
+    <div className="tasks-tab">
+      <AnimatePresence initial={false}>
+        {tasks.map((task) => (
+          <TaskRow key={task.id} threadId={thread.id} task={task} canHide={false} />
+        ))}
+      </AnimatePresence>
+    </div>
   );
 }

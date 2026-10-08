@@ -2,7 +2,7 @@
 // thread/read only rebuilds messages and file changes; the rollout also has every shell command,
 // tool call and reasoning summary, so history is read from it.
 import fs from 'node:fs';
-import { itemEvents, stripAnsi, userInputText } from './translate.mjs';
+import { askQuestions, itemEvents, readableUserText, stripAnsi, userInputText } from './translate.mjs';
 
 const SHELL_TOOLS = new Set(['shell', 'shell_command', 'exec_command', 'local_shell', 'unified_exec']);
 const PLAN_STATUS = { pending: 'pending', in_progress: 'in_progress', inProgress: 'in_progress', completed: 'completed' };
@@ -65,6 +65,7 @@ function toolCall(p) {
     };
   }
   if (name === 'view_image') return { name: 'Read', input: { file_path: args.path ?? '' } };
+  if (name === 'request_user_input' || name === 'request_user_input_async') return { name: 'AskUserQuestion', input: { questions: askQuestions(args.questions) } };
   if (name === 'spawn_agent') return { name: 'Agent', input: { description: String(args.message ?? args.prompt ?? '').split('\n')[0].slice(0, 80), prompt: args.message ?? args.prompt ?? '' } };
   if (p.namespace) return { name: `mcp__${p.namespace}__${name}`, input: args };
   if (name.startsWith('mcp__')) return { name, input: args };
@@ -154,7 +155,7 @@ export function rolloutEvents(file) {
               return data ? { id: `img-${seq}-${i}`, mediaType, data } : null;
             })
             .filter(Boolean);
-          cur.push({ type: 'user', text: String(p.message ?? '').trim(), images });
+          cur.push({ type: 'user', text: readableUserText(p.message).trim(), images });
           break;
         }
         case 'turn_aborted':

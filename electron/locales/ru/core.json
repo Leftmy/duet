@@ -1,3 +1,4 @@
 {
-  "imagePlaceholder": "[изображение]"
+  "imagePlaceholder": "[изображение]",
+  "questionReply": "Ответ на вопрос: «{question}»"
 }

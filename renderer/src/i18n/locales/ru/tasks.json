@@ -12,5 +12,7 @@
   "running_few": "{count} выполняются",
   "running_many": "{count} выполняются",
   "running_other": "{count} выполняется",
-  "allDone": "все завершены"
+  "allDone": "все завершены",
+  "showAll": "Все задачи",
+  "empty": "В этом чате пока не было фоновых задач"
 }

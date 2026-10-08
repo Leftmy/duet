@@ -3,6 +3,8 @@
 // (one row per file), MCP and client tools → mcp__<server>__<tool>, the plan → TodoWrite,
 // collab agents → Agent + subagent records.
 
+import { t } from '../../i18n.mjs';
+
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 export const stripAnsi = (s) => String(s ?? '').replace(ANSI, '');
 
@@ -61,12 +63,39 @@ function dynamicResult(item) {
 
 const statusOf = (s) => (s === 'completed' ? 'done' : 'error');
 
+const REPLY = /<send_user_message_question_reply>([\s\S]*?)<\/send_user_message_question_reply>/g;
+
+/** The Codex app sends answers to the agent's questions as a tagged JSON message; show them as text. */
+export function readableUserText(text) {
+  return String(text ?? '').replace(REPLY, (whole, body) => {
+    try {
+      return JSON.parse(body)
+        .map((r) => `${t('core.questionReply', { question: String(r.question ?? '').trim() })}\n${String(r.answer ?? '').trim()}`)
+        .join('\n\n');
+    } catch {
+      return whole;
+    }
+  });
+}
+
+/** The agent's questions to the user (request_user_input) in the desk's AskUserQuestion shape. */
+export const askQuestions = (questions = []) =>
+  questions.map((q) => ({
+    question: String(q.question ?? q.title ?? ''),
+    ...(q.header ? { header: q.header } : {}),
+    ...(q.id ? { id: q.id } : {}),
+    options: (q.options ?? []).map((o) => ({ label: o.label, description: o.description ?? '' })),
+    multiSelect: false,
+  }));
+
 /** User input items → text and images. */
 export function userInputText(content = []) {
-  const text = content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text)
-    .join('\n');
+  const text = readableUserText(
+    content
+      .filter((c) => c.type === 'text')
+      .map((c) => c.text)
+      .join('\n'),
+  );
   const images = content
     .filter((c) => c.type === 'image' && /^data:/.test(c.url))
     .map((c, i) => {
@@ -135,6 +164,19 @@ export function itemEvents(item, phase, agent) {
     case 'collabAgentToolCall':
       out.push(...collabEvents(item, phase, a));
       break;
+    case 'subAgentActivity':
+      if (phase === 'end' && !a.agent) out.push(...subAgentEvents(item));
+      break;
+    case 'extension':
+      if (item.kind === 'web.search') {
+        const act = item.action ?? {};
+        out.push({ type: 'tool', id: item.id, name: 'WebSearch', input: { query: item.query || act.query || (act.queries ?? []).join(', ') }, final: true, ...a });
+        if (phase === 'end') {
+          const found = (item.results ?? []).filter((r) => r.url).map((r) => `${r.title ?? r.url} — ${r.url}`);
+          out.push({ type: 'tool.result', id: item.id, status: 'done', result: found.join('\n'), ...a });
+        }
+      }
+      break;
     case 'contextCompaction':
       if (phase === 'end') out.push({ type: 'notice', code: 'reduce.compacted', tone: 'info', at: 'open' });
       break;
@@ -161,6 +203,43 @@ function collabEvents(item, phase, a) {
   } else {
     out.push({ type: 'tool', id: item.id, name: `Agent.${item.tool}`, input: { ...(item.prompt ? { prompt: item.prompt } : {}), targets: item.receiverThreadIds ?? [] }, final: true, ...a });
     if (phase === 'end') out.push({ type: 'tool.result', id: item.id, status: item.status === 'failed' ? 'error' : 'done', result: '', ...a });
+  }
+  return out;
+}
+
+/** Id of the agent row for a Codex subagent thread. */
+export const subAgentId = (threadId) => `agent-${threadId}`;
+
+/** Codex's own subagents (newer versions): started, messaged (works again), completed. */
+function subAgentEvents(item) {
+  const id = subAgentId(item.agentThreadId);
+  const name = String(item.agentPath ?? '').split('/').filter(Boolean).pop()?.replace(/_/g, ' ') || 'agent';
+  switch (item.kind) {
+    case 'started':
+      return [
+        { type: 'tool', id, name: 'Agent', input: { description: name }, final: true },
+        { type: 'tool.result', id, status: 'done', result: '' },
+        { type: 'agent', id, name, background: true },
+      ];
+    case 'interacted':
+      return [{ type: 'agent', id, status: 'running' }];
+    case 'completed':
+      return [
+        { type: 'agent', id, status: 'done' },
+        { type: 'agent.mark', id, status: 'done' },
+      ];
+    default:
+      return [];
+  }
+}
+
+/** A subagent thread's own events, as the transcript of its agent row. */
+export function asAgentTranscript(events, agent) {
+  const out = [];
+  for (const e of events) {
+    if (e.type === 'user') {
+      if (e.text) out.push({ type: 'agent.msg', agent, dir: 'to', text: e.text, label: 'message', dedupe: true });
+    } else if (['text', 'thinking', 'tool', 'tool.result', 'tool.output'].includes(e.type)) out.push({ ...e, agent });
   }
   return out;
 }
@@ -208,6 +287,8 @@ export function createTranslator() {
           const item = p.item;
           if (!agent && item.type === 'agentMessage' && item.text) lastText = item.text;
           out.push(...itemEvents(item, 'end', agent));
+          // Newer subagents: follow the child thread on this run.
+          if (!agent && item.type === 'subAgentActivity' && item.agentThreadId) children.set(item.agentThreadId, subAgentId(item.agentThreadId));
           if (!agent && item.type === 'collabAgentToolCall' && item.tool === 'spawnAgent') {
             for (const id of item.receiverThreadIds ?? []) children.set(id, item.id);
             const state = Object.values(item.agentsStates ?? {})[0];

@@ -46,5 +46,6 @@
   "filesN_few": "{count} ф.",
   "filesN_many": "{count} ф.",
   "filesN_other": "{count} ф.",
-  "noChanges": "В этом чате Claude ещё не менял файлы"
+  "noChanges": "В этом чате Claude ещё не менял файлы",
+  "tabTasks": "Фоновые задачи"
 }

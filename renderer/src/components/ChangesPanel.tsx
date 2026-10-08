@@ -18,6 +18,7 @@ import {
   Undo2,
   Wand2,
   X,
+  ListTodo,
 } from 'lucide-react';
 import type { GitFile, GitStatus, Thread, ToolItem } from '../types';
 import { basename, shortPath } from '../lib/format';
@@ -25,6 +26,7 @@ import { buildDiff, diffStats, parseUnifiedDiff, toolDiff, toolKind, type DiffLi
 import { DiffView, collapse } from './ToolRow';
 import { MenuItem, Popover, spring } from './Popover';
 import { AgentsTab } from './Agents';
+import { TasksTab } from './TasksBar';
 import { askConfirm } from '../lib/dialog';
 import { BrowserPanel } from './BrowserPanel';
 import { FilesPanel } from './FilesPanel';
@@ -508,11 +510,14 @@ export function ChangesPanel({ thread, onClose }: { thread: Thread; onClose: () 
   const tab = useStore((s) => s.panelTab);
   const setTab = useStore((s) => s.setPanelTab);
   const agentCount = Object.keys(thread.agents).length;
+  const bgTasks = Object.values(thread.tasks).filter((x) => x.background);
+  const taskCount = bgTasks.filter((x) => x.status === 'running' || x.status === 'pending' || x.status === 'paused').length || bgTasks.length;
   const totals = files.reduce((a, f) => ({ add: a.add + f.add, del: a.del + f.del }), { add: 0, del: 0 });
   const TABS = [
     { k: 'chat' as const, icon: <FileDiff size={13} />, label: t('changes.tabChat'), count: files.length },
     { k: 'git' as const, icon: <GitBranch size={13} />, label: 'Git', count: 0 },
     { k: 'agents' as const, icon: <Sparkles size={13} />, label: t('changes.tabAgents'), count: agentCount },
+    { k: 'tasks' as const, icon: <ListTodo size={13} />, label: t('changes.tabTasks'), count: taskCount },
     { k: 'browser' as const, icon: <Globe size={13} />, label: t('changes.tabBrowser'), count: 0 },
     { k: 'files' as const, icon: <FileCode2 size={13} />, label: t('changes.tabFiles'), count: 0 },
     { k: 'terminal' as const, icon: <SquareTerminal size={13} />, label: t('changes.tabTerminal'), count: 0 },
@@ -558,6 +563,8 @@ export function ChangesPanel({ thread, onClose }: { thread: Thread; onClose: () 
         <GitTab thread={thread} />
       ) : tab === 'agents' ? (
         <AgentsTab thread={thread} />
+      ) : tab === 'tasks' ? (
+        <TasksTab thread={thread} />
       ) : tab === 'files' ? (
         <FilesPanel thread={thread} />
       ) : tab === 'terminal' ? (

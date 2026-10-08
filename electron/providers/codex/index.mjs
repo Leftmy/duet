@@ -4,7 +4,8 @@
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { AppServer, findCodex } from './rpc.mjs';
-import { createTranslator, historyEvents, subagentEvents, limitsEvent } from './translate.mjs';
+import { asAgentTranscript, askQuestions, createTranslator, historyEvents, subAgentId, subagentEvents, limitsEvent } from './translate.mjs';
+import fs from 'node:fs';
 import { rolloutEvents } from './rollout.mjs';
 import { findTool, inputSchema, runTool } from '../../core/tools.mjs';
 
@@ -308,7 +309,18 @@ export function createCodexProvider({ log = () => {} } = {}) {
             return { decision: mode === 'bypassPermissions' ? 'approved' : 'denied' };
           }
           if (method === 'mcpServer/elicitation/request') return { action: 'decline', content: null, _meta: null };
-          if (method === 'item/tool/requestUserInput') return { answers: {} };
+          if (method === 'item/tool/requestUserInput') {
+            // The agent asks the user: same card as Claude's questions; answers go back by question id.
+            const questions = askQuestions(p.questions);
+            const r = await ask(id, { toolName: 'AskUserQuestion', input: { questions }, toolUseID: p.itemId, canAlways: false });
+            if (r.decision === 'deny') return { answers: {} };
+            const given = r.updatedInput?.answers ?? {};
+            return {
+              answers: Object.fromEntries(
+                questions.filter((q) => q.id && given[q.question]).map((q) => [q.id, { answers: String(given[q.question]).split(', ').filter(Boolean) }]),
+              ),
+            };
+          }
           throw new Error(`Unsupported request: ${method}`);
         },
 
@@ -441,6 +453,16 @@ export function createCodexProvider({ log = () => {} } = {}) {
 
     async loadSubagents(sessionId) {
       const srv = await ensureServer();
+      // Newer Codex: subagent threads named in the rollout (SubAgentActivity), read from their own rollouts.
+      const fromRollout = [];
+      const file = await this.sessionFile(sessionId).catch(() => null);
+      const text = file ? (() => { try { return fs.readFileSync(file, 'utf8'); } catch { return ''; } })() : '';
+      const childIds = [...new Set([...text.matchAll(/"agent_thread_id":"([^"]+)"/g)].map((m) => m[1]))];
+      for (const child of childIds) {
+        const childFile = await this.sessionFile(child).catch(() => null);
+        const events = childFile ? rolloutEvents(childFile) : null;
+        if (events) fromRollout.push(...asAgentTranscript(events, subAgentId(child)));
+      }
       const spawns = [];
       for (const turn of await allTurns(srv, sessionId))
         for (const item of turn.items ?? [])
@@ -453,7 +475,7 @@ export function createCodexProvider({ log = () => {} } = {}) {
             .catch(() => null),
         ),
       );
-      return subagentEvents(threads.filter(Boolean));
+      return [...fromRollout, ...subagentEvents(threads.filter(Boolean))];
     },
 
     async renameSession(sessionId, title) {

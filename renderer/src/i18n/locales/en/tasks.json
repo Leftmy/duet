@@ -8,5 +8,7 @@
   "title": "Background tasks",
   "running_one": "{count} running",
   "running_other": "{count} running",
-  "allDone": "all finished"
+  "allDone": "all finished",
+  "showAll": "All tasks",
+  "empty": "No background tasks in this chat yet"
 }

@@ -17,5 +17,6 @@
   "loadingTranscript": "Loading conversation…",
   "working": "Working",
   "result": "Result",
-  "empty": "No agents have been started in this chat yet"
+  "empty": "No agents have been started in this chat yet",
+  "collapse": "Hide the conversation (show all agents)"
 }

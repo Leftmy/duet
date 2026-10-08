@@ -35,6 +35,8 @@ interface Settings {
   links: Record<string, string>;
   /** Sessions of agents that worked for another chat (run_agent); shown under that chat, not as chats. */
   subSessions: string[];
+  /** Agents panel shows only the list of agents (their conversations hidden). */
+  agentsCollapsed: boolean;
   model: string;
   effort: Effort;
   permissionMode: PermMode;
@@ -57,7 +59,7 @@ interface Settings {
   pinned: string[];
 }
 
-export type PanelTab = 'chat' | 'git' | 'agents' | 'browser' | 'files' | 'terminal';
+export type PanelTab = 'chat' | 'git' | 'agents' | 'tasks' | 'browser' | 'files' | 'terminal';
 
 export interface ReviewComment {
   id: string;
@@ -179,6 +181,7 @@ const DEFAULT_SETTINGS: Settings = {
   providerModels: {},
   links: {},
   subSessions: [],
+  agentsCollapsed: false,
   model: 'default',
   effort: 'high',
   permissionMode: 'default',

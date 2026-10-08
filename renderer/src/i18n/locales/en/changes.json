@@ -44,5 +44,6 @@
   "tabTerminal": "Terminal",
   "filesN_one": "{count} file",
   "filesN_other": "{count} files",
-  "noChanges": "Claude hasn't changed any files in this chat yet"
+  "noChanges": "Claude hasn't changed any files in this chat yet",
+  "tabTasks": "Background tasks"
 }

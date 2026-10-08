@@ -140,7 +140,8 @@ function newAgent(agents: Record<string, AgentRun>, id: string, now: number, his
     color: Object.keys(agents).length,
     status: 'running',
     background: true,
-    startedAt: now,
+    // Saved transcripts have no timing for agents.
+    startedAt: historical ? 0 : now,
     items: [],
     toolUses: 0,
     ...(historical ? { historical: true } : {}),
@@ -173,6 +174,8 @@ function applyAgent(agents: Record<string, AgentRun>, ev: Extract<DeskEvent, { t
     next.items = i >= 0 ? next.items.map((x, n) => (n === i ? promptItem : x)) : [promptItem, ...next.items];
   }
   if (ev.status && ev.status !== 'running') next = finishAgent(next, ev.status, ev.result, now);
+  // Resumed (e.g. a message sent to a finished agent): it works again.
+  else if (ev.status === 'running' && base.status !== 'running') next = { ...next, status: 'running', endedAt: undefined, ...(historical ? {} : { startedAt: now }) };
   else if (ev.result) next = { ...next, result: ev.result };
   return { ...agents, [ev.id]: next };
 }
@@ -210,7 +213,7 @@ function deskAgentFromTool(t: Thread, ev: DeskEvent, now: number, historical: bo
       now,
       historical,
     );
-  } else if (ev.type === 'tool.result' && historical && t.agents[ev.id]?.status === 'running') {
+  } else if (ev.type === 'tool.result' && historical && t.agents[ev.id]?.provider && t.agents[ev.id].status === 'running') {
     t.agents = applyAgent(t.agents, { type: 'agent', id: ev.id, status: ev.status === 'error' ? 'error' : 'done', result: deskAgentAnswer(ev.result) }, now, historical);
   }
 }
@@ -298,7 +301,8 @@ function applyTask(t: Thread, ev: Extract<DeskEvent, { type: 'task' }>, now: num
   const agent = toolUseId ? t.agents[toolUseId] : undefined;
   if (agent) {
     let next = agent;
-    if (ev.op === 'start') next = { ...agent, background: agent.background || Boolean(ev.background) };
+    if (ev.op === 'start')
+      next = { ...agent, background: agent.background || Boolean(ev.background), ...(agent.status !== 'running' ? { status: 'running' as const, endedAt: undefined, startedAt: now } : {}) };
     else if (ev.op === 'progress') next = { ...agent, progress: ev.lastTool || agent.progress, toolUses: ev.toolUses ?? agent.toolUses };
     else if (ev.op === 'end') {
       const status = TASK_STATUS[ev.status] ?? 'stopped';

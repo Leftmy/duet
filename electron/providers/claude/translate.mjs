@@ -82,6 +82,20 @@ export function createTranslator(mode = 'live') {
   const tools = new Map();
   /** subagents spawned by the lead: tool id → { name, background, running, msgs } */
   const agents = new Map();
+  /** Claude Code's own agent ids (launch receipts, task ids) → the tool call that spawned the agent */
+  const byAgentId = new Map();
+  /** SendMessage calls → the agent they address (resumed agents report under that call's id) */
+  const sendTargets = new Map();
+  /** The spawning tool call of an agent, from any id Claude Code reports it under. */
+  const agentOf = (toolUseId, taskId) =>
+    (toolUseId && agents.has(toolUseId) ? toolUseId : undefined) ?? sendTargets.get(toolUseId) ?? byAgentId.get(taskId);
+  /** A finished agent that got a new message works again. */
+  const resume = (out, id) => {
+    const a = agents.get(id);
+    if (!a || a.running) return;
+    a.running = true;
+    out.push({ type: 'agent', id, status: 'running' });
+  };
   let seq = 0;
   const nid = () => `c${++seq}-${randomUUID().slice(0, 8)}`;
 
@@ -134,16 +148,25 @@ export function createTranslator(mode = 'live') {
     else if (block.name === 'SendMessage' && block.input) {
       const to = String(block.input.to ?? block.input.recipient ?? '');
       const target =
-        [...agents].find(([id, a]) => a.name === to || id === to)?.[0] ?? [...agents].find(([, a]) => a.running)?.[0];
+        byAgentId.get(to) ?? [...agents].find(([id, a]) => a.name === to || id === to)?.[0] ?? [...agents].find(([, a]) => a.running)?.[0];
       const text = String(block.input.message ?? block.input.content ?? '');
+      if (target) sendTargets.set(block.id, target);
       if (target && text) out.push({ type: 'agent.msg', agent: target, id: `${block.id}:msg`, dir: 'to', text, label: 'message' });
     }
   };
 
-  /** Finishes subagents whose spawning tool call returned. */
+  /** Finishes subagents whose spawning tool call returned; SendMessage results may resume one. */
   const agentResults = (out, content, history) => {
     for (const block of Array.isArray(content) ? content : []) {
-      const a = block?.type === 'tool_result' ? agents.get(block.tool_use_id) : undefined;
+      if (block?.type !== 'tool_result') continue;
+      const target = sendTargets.get(block.tool_use_id);
+      if (target) {
+        if (!block.is_error && /resumedAgentId|Resuming agent/i.test(resultText(block.content))) resume(out, target);
+        continue;
+      }
+      const agentId = resultText(block.content).match(/agentId:\s*([\w-]+)/)?.[1];
+      if (agentId && agents.has(block.tool_use_id)) byAgentId.set(agentId, block.tool_use_id);
+      const a = agents.get(block.tool_use_id);
       if (!a || !a.running) continue;
       const text = resultText(block.content);
       // Rejected before it ever ran (bad input): it was never an agent.
@@ -162,7 +185,7 @@ export function createTranslator(mode = 'live') {
 
   /** A subagent's own message (live sidechain or a saved subagent transcript). */
   const subagentMessage = (out, msg) => {
-    const parent = msg.parent_tool_use_id;
+    const parent = agentOf(msg.parent_tool_use_id) ?? msg.parent_tool_use_id;
     const a = agents.get(parent);
     if (a) a.msgs++;
     const content = msg.message?.content;
@@ -201,7 +224,10 @@ export function createTranslator(mode = 'live') {
         out.push({ type: 'notice', code: 'reduce.compacted', tone: 'info', at: 'open' });
         out.push({ type: 'status', activity: null });
         return;
-      case 'task_started':
+      case 'task_started': {
+        if (agents.has(msg.tool_use_id)) byAgentId.set(msg.task_id, msg.tool_use_id);
+        const agent = agentOf(msg.tool_use_id, msg.task_id);
+        if (agent) resume(out, agent);
         out.push({
           type: 'task',
           op: 'start',
@@ -209,10 +235,11 @@ export function createTranslator(mode = 'live') {
           description: msg.description || msg.subagent_type || undefined,
           taskType: msg.task_type ?? msg.subagent_type,
           background: Boolean(msg.is_backgrounded),
-          toolUseId: msg.tool_use_id,
+          toolUseId: agent ?? msg.tool_use_id,
         });
-        if (msg.is_backgrounded && agents.has(msg.tool_use_id)) agents.get(msg.tool_use_id).background = true;
+        if (msg.is_backgrounded && agent) agents.get(agent).background = true;
         return;
+      }
       case 'task_updated': {
         const p = msg.patch ?? {};
         out.push({
@@ -231,7 +258,8 @@ export function createTranslator(mode = 'live') {
         out.push({ type: 'task', op: 'progress', id: msg.task_id, toolUses: msg.usage?.tool_uses, lastTool: msg.summary || msg.last_tool_name });
         return;
       case 'task_notification': {
-        const a = agents.get(msg.tool_use_id);
+        const agent = agentOf(msg.tool_use_id, msg.task_id);
+        const a = agent && agents.get(agent);
         if (a) a.running = false;
         out.push({
           type: 'task',
@@ -241,7 +269,7 @@ export function createTranslator(mode = 'live') {
           summary: msg.summary,
           outputFile: msg.output_file,
           toolUses: msg.usage?.tool_uses,
-          toolUseId: msg.tool_use_id,
+          toolUseId: agent ?? msg.tool_use_id,
         });
         return;
       }
@@ -363,8 +391,15 @@ export function createTranslator(mode = 'live') {
         // Claude Code injects background-task results as user messages; show them as notices.
         const failed = /<status>(failed|killed|stopped)<\/status>/.test(u.text);
         const toolUseId = u.text.match(/<tool-use-id>([^<]+)<\/tool-use-id>/)?.[1]?.trim();
-        if (toolUseId && tools.has(toolUseId) && isAgentTool(tools.get(toolUseId).name)) {
-          out.push({ type: 'agent.mark', id: toolUseId, status: failed ? 'error' : 'done' });
+        const taskId = u.text.match(/<task-id>([^<]+)<\/task-id>/)?.[1]?.trim();
+        const agent = agentOf(toolUseId, taskId);
+        if (agent && isAgentTool(tools.get(agent)?.name)) {
+          // A resumed agent finishes again.
+          if (agents.get(agent)?.running) {
+            agents.get(agent).running = false;
+            out.push({ type: 'agent', id: agent, status: failed ? 'error' : 'done' });
+          }
+          out.push({ type: 'agent.mark', id: agent, status: failed ? 'error' : 'done' });
         } else {
           const summary = u.text.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim();
           out.push({ type: 'notice', ...(summary ? { text: summary } : { code: 'reduce.bgTaskDone' }), tone: failed ? 'warn' : 'info', at: 'feed' });
@@ -380,7 +415,11 @@ export function createTranslator(mode = 'live') {
     } else if (m.type === 'assistant') {
       assistantContent(out, message.id, message.content);
       if (m.uuid) out.push({ type: 'mark', uuid: m.uuid, assistant: true });
-      for (const block of message.content ?? []) if (block.type === 'tool_use' && isAgentTool(block.name)) upsertAgent(out, block.id, block.input);
+      for (const block of message.content ?? []) {
+        if (block.type !== 'tool_use') continue;
+        if (isAgentTool(block.name)) upsertAgent(out, block.id, block.input);
+        else if (block.name === 'SendMessage') leadToolUse(out, block);
+      }
     }
   };
 
