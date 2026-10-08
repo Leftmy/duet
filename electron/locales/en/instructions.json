@@ -11,5 +11,7 @@
   "tooLarge": "File is larger than 2 MB",
   "invalidJson": "Invalid JSON: {error} (line {line})",
   "emptyContent": "Empty content",
-  "hooksInvalidJson": "File contains invalid JSON"
+  "hooksInvalidJson": "File contains invalid JSON",
+  "doc.codexConfig": "Settings, MCP servers (config.toml)",
+  "doc.codexProjectConfig": "Project settings (config.toml)"
 }

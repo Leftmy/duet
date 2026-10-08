@@ -8,6 +8,7 @@ import { useStore } from '../store';
 import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel } from '../lib/format';
 import type { Effort, PermMode, ThemePref, ProviderId } from '../types';
 import type { ProviderProbe } from '../desk';
+import { AgentMark } from './AgentMark';
 import { spring } from './Popover';
 import { LANGS, t, type Lang } from '../i18n';
 import { AboutSection, McpManager, SkillsList, StatsView } from './SettingsExtra';
@@ -241,7 +242,9 @@ export function SettingsModal() {
                   )}
                   {section === 'claude' && (
                     <>
-                      <h2>Claude Code</h2>
+                      <h2 className="agent-h2">
+                        <AgentMark provider="claude" size={18} /> Claude
+                      </h2>
                       <Row title={t('settings.account')} hint={account.organization}>
                         <span className="muted">{account.email ?? '—'}</span>
                       </Row>
@@ -273,7 +276,9 @@ export function SettingsModal() {
                         .filter(([id]) => id !== 'claude')
                         .map(([id, p]) => (
                           <div key={id}>
-                            <h2>{p.label}</h2>
+                            <h2 className="agent-h2">
+                              <AgentMark provider={id} size={18} /> {p.label}
+                            </h2>
                             {p.available ? (
                               <>
                                 <Row title={t('settings.account')}>

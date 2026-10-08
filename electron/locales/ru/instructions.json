@@ -11,5 +11,7 @@
   "tooLarge": "Файл больше 2 МБ",
   "invalidJson": "Неверный JSON: {error} (строка {line})",
   "emptyContent": "Пустое содержимое",
-  "hooksInvalidJson": "Файл содержит неверный JSON"
+  "hooksInvalidJson": "Файл содержит неверный JSON",
+  "doc.codexConfig": "Настройки и MCP-серверы (config.toml)",
+  "doc.codexProjectConfig": "Настройки проекта (config.toml)"
 }

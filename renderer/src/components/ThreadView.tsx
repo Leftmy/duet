@@ -33,6 +33,7 @@ import { ProjectPicker, WorkModePicker, WorktreeChip } from './Pickers';
 import { MenuItem, Popover, spring } from './Popover';
 import { ChangesPanel, collectChanges } from './ChangesPanel';
 import { ChaptersMenu } from './SessionItems';
+import { AgentMark } from './AgentMark';
 import { askConfirm } from '../lib/dialog';
 import { detachThread, isDetachedWindow } from '../features/detach/detach';
 import { t } from '../i18n';
@@ -520,6 +521,7 @@ function AgentDivider({ provider }: { provider: ProviderId }) {
   return (
     <div className="chapter agent-divider">
       <span className="chapter-line" />
+      <AgentMark provider={provider} size={14} />
       <span className="chapter-title">{label}</span>
       <span className="chapter-line" />
     </div>

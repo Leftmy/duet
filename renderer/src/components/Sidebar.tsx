@@ -28,11 +28,12 @@ import {
 import { create } from 'zustand';
 import { openSearch } from '../features/search/SearchModal';
 import { projectName, projectOf, useStore } from '../store';
-import type { Project, SessionInfo, Thread } from '../types';
+import type { Project, ProviderId, SessionInfo, Thread, UsageSummary } from '../types';
 import { relativeTime, resetTime } from '../lib/format';
 import { askConfirm } from '../lib/dialog';
 import { t } from '../i18n';
 import { FloatingMenu, MenuItem, anchorFrom, spring, type MenuAnchor } from './Popover';
+import { AgentMark, AgentMarks } from './AgentMark';
 
 // Chat titles are stored data written under whatever UI language was active, so they are matched
 // against the strings of every locale, not just the current one.
@@ -76,20 +77,51 @@ interface Group {
   latest: number;
 }
 
-function UsageBar({ label, pct, resetsAt }: { label: string; pct: number; resetsAt?: string | number | null }) {
-  const tone = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : '';
+/** Plan limits of every agent: a compact block per agent (5-hour window and week). */
+function AgentsUsage({ active }: { active: ProviderId }) {
+  const providers = useStore((s) => s.providers);
+  const usageBy = useStore((s) => s.usageBy);
+  const claudeUsage = useStore((s) => s.usage);
+  const claudeAccount = useStore((s) => s.account);
+  const ids = (Object.keys(providers) as ProviderId[]).filter((id) => providers[id].available);
+  if (!ids.length) return null;
+  const openAgents = () => useStore.setState({ settingsOpen: true });
   return (
-    <div className="usage" title={resetsAt ? t('sidebar.resets', { time: resetTime(resetsAt) }) : undefined}>
-      <div className="usage-row">
-        <span>{label}</span>
-        <span className="muted">
-          {Math.round(pct)}%{resetsAt ? ` · ${resetTime(resetsAt)}` : ''}
-        </span>
-      </div>
-      <div className="usage-track">
-        <motion.div className={`usage-fill ${tone}`} initial={false} animate={{ width: `${Math.min(100, pct)}%` }} transition={spring} />
-      </div>
+    <div className="agents-usage">
+      {ids.map((id) => {
+        const u: UsageSummary = usageBy[id] ?? (id === 'claude' ? claudeUsage : {});
+        const plan = (id === 'claude' ? claudeAccount.subscriptionType ?? u.plan : providers[id].account?.subscriptionType) ?? '';
+        return (
+          <button key={id} className={`agent-usage ${id === active ? 'is-active' : ''}`} onClick={openAgents} title={t('sidebar.agentUsageHint')}>
+            <span className="agent-usage-head">
+              <AgentMark provider={id} size={13} />
+              <span className="agent-usage-name">{providers[id].label}</span>
+              {plan && <span className="muted small truncate">{plan}</span>}
+            </span>
+            <span className="agent-usage-bars">
+              <MiniBar label={t('sidebar.usageSessionShort')} w={u.session} />
+              <MiniBar label={t('sidebar.usageWeekShort')} w={u.weekly} />
+            </span>
+          </button>
+        );
+      })}
     </div>
+  );
+}
+
+function MiniBar({ label, w }: { label: string; w?: { pct: number; resetsAt?: string | number | null } }) {
+  if (!w) return <span className="mini-bar is-empty" />;
+  const tone = w.pct >= 90 ? 'danger' : w.pct >= 70 ? 'warn' : '';
+  return (
+    <span className="mini-bar" title={w.resetsAt ? t('sidebar.resets', { time: resetTime(w.resetsAt) }) : undefined}>
+      <span className="mini-bar-row">
+        <span>{label}</span>
+        <span>{Math.round(w.pct)}%</span>
+      </span>
+      <span className="usage-track">
+        <motion.span className={`usage-fill ${tone}`} initial={false} animate={{ width: `${Math.min(100, w.pct)}%` }} transition={spring} />
+      </span>
+    </span>
   );
 }
 
@@ -136,7 +168,9 @@ function chainRows(rows: Row[], links: Record<string, string> = {}) {
   return out;
 }
 
-const rowProvider = (r: Row) => r.thread?.provider ?? r.session?.provider ?? 'claude';
+const rowProvider = (r: Row): ProviderId => r.thread?.provider ?? r.session?.provider ?? 'claude';
+/** Agents of a row and its older parts, newest first. */
+const rowProviders = (r: Row) => [...new Set([r, ...(r.older ?? [])].map(rowProvider))];
 
 const rowKeys = (r: Row) => [r.key, ...(r.older ?? []).map((o) => o.key)];
 
@@ -293,7 +327,8 @@ function ChatRow({
     setMenu(null);
   }, []);
   const shown = part ? t('sidebar.part', { n: part }) : baseTitle(row.title) ? row.title.replace(FORK_SUFFIX, '') : row.title;
-  const agentLabel = useStore((s) => s.providers[rowProvider(row)]?.label ?? rowProvider(row));
+  // With more than one agent, every chat shows whose it is.
+  const multiAgent = useStore((s) => Object.keys(s.providers).length > 1);
 
   const selected = useSelection((x) => Boolean(x.rows[row.key]));
   const selecting = useSelection((x) => Object.keys(x.rows).length > 0);
@@ -355,6 +390,8 @@ function ChatRow({
         title={`${row.title}\n${t('sidebar.rowHint')}`}
       >
         {active && <motion.span layoutId="thread-active" className="active-bg" transition={spring} />}
+        {multiAgent && !part && <AgentMarks providers={rowProviders(row)} size={13} />}
+        {multiAgent && part ? <AgentMark provider={rowProvider(row)} size={11} /> : null}
         {(worktrees[row.cwd.toLowerCase()] || row.thread?.worktree) && <GitFork size={12} className="muted" style={{ flexShrink: 0 }} />}
         {renaming ? (
           <input
@@ -372,11 +409,6 @@ function ChatRow({
           />
         ) : (
           <span className="truncate">{shown}</span>
-        )}
-        {!renaming && rowProvider(row) !== 'claude' && (
-          <span className="agent-badge" title={t('sidebar.agentHint', { name: agentLabel })}>
-            {agentLabel}
-          </span>
         )}
         {!part && row.older?.length ? (
           <span
@@ -692,12 +724,12 @@ export function Sidebar() {
   const PROJECT_LIMIT = 10;
 
   const active = threads[activeId];
-  // Account and plan limits of the agent the open chat uses.
+  // The person behind the agents: the open chat's agent account first.
   const agent = active?.provider ?? settings.provider ?? 'claude';
+  const providers = useStore((s) => s.providers);
   const claudeAccount = useStore((s) => s.account);
-  const agentInfo = useStore((s) => s.providers[agent]);
-  const account = agent === 'claude' ? claudeAccount : agentInfo?.account ?? {};
-  const usage = useStore((s) => s.usageBy[agent] ?? (agent === 'claude' ? s.usage : {}));
+  const accountOf = (id: string) => (id === 'claude' ? claudeAccount : providers[id]?.account ?? {});
+  const email = accountOf(agent).email ?? Object.keys(providers).map((id) => accountOf(id).email).find(Boolean);
 
   const { groups, archivedRows, pinnedRows } = useMemo(() => {
     const byKey = new Map<string, Group>();
@@ -824,7 +856,7 @@ export function Sidebar() {
 
   const ThemeIcon = settings.theme === 'dark' ? Moon : settings.theme === 'light' ? Sun : SunMoon;
   const nextTheme = settings.theme === 'system' ? 'dark' : settings.theme === 'dark' ? 'light' : 'system';
-  const initials = (account.email ?? 'C').slice(0, 1).toUpperCase();
+  const initials = (email ?? 'D').slice(0, 1).toUpperCase();
   const projectCount = groups.filter((g) => g.project).length;
   const visible = allProjects || search ? groups : groups.slice(0, Math.max(PROJECT_LIMIT, projectCount));
 
@@ -956,13 +988,17 @@ export function Sidebar() {
       <BulkBar />
 
       <div className="side-foot">
-        {usage.session && <UsageBar label={t('sidebar.usageSession')} pct={usage.session.pct} resetsAt={usage.session.resetsAt} />}
-        {usage.weekly && <UsageBar label={t('sidebar.usageWeek')} pct={usage.weekly.pct} resetsAt={usage.weekly.resetsAt} />}
+        <AgentsUsage active={agent} />
         <div className="account">
           <span className="avatar">{initials}</span>
           <div className="account-text">
-            <span className="truncate">{account.email ?? agentInfo?.label ?? 'Claude Code'}</span>
-            <span className="muted small">{account.subscriptionType ?? usage.plan ?? ''}</span>
+            <span className="truncate">{email ?? 'Duet'}</span>
+            <span className="muted small truncate">
+              {Object.entries(providers)
+                .filter(([, p]) => p.available)
+                .map(([, p]) => p.label)
+                .join(' · ')}
+            </span>
           </div>
           <button className="icon-btn" title={t('sidebar.settings')} onClick={() => useStore.setState({ settingsOpen: true })}>
             <Settings2 size={15} />

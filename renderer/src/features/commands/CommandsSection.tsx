@@ -10,6 +10,8 @@ import { askConfirm } from '../../lib/dialog';
 import { notifyCommandsChanged } from './events';
 import { getTemplates, buildFile, nameError, readFront, type CmdKind, type CmdTemplate } from './templates';
 import { t } from '../../i18n';
+import { AgentTabs } from '../../components/SettingsExtra';
+import type { ProviderId } from '../../types';
 import '../instructions/instructions.css';
 import './commands.css';
 
@@ -70,6 +72,8 @@ function MenuPreview({ name, description, argumentHint }: { name: string; descri
 
 export function CommandsSection() {
   const cwd = useStore((s) => s.threads[s.activeId]?.cwd || '');
+  // Each agent keeps its own commands and skills (~/.claude vs ~/.codex).
+  const [agent, setAgent] = useState<ProviderId>('claude');
   const dark = useStore((s) => s.resolvedTheme === 'dark');
   const toast = useStore((s) => s.toast);
   const [items, setItems] = useState<CmdItem[] | null>(null);
@@ -121,7 +125,7 @@ export function CommandsSection() {
 
   const loadList = useCallback(async () => {
     try {
-      const [list, p] = await Promise.all([window.desk.call<CmdItem[]>('cmd:list', cwd || null), window.desk.call<CmdPaths>('cmd:paths', cwd || null)]);
+      const [list, p] = await Promise.all([window.desk.call<CmdItem[]>('cmd:list', cwd || null, agent), window.desk.call<CmdPaths>('cmd:paths', cwd || null, agent)]);
       setItems(list);
       setPaths(p);
       return list;
@@ -130,7 +134,7 @@ export function CommandsSection() {
       setItems([]);
       return [];
     }
-  }, [cwd, toast]);
+  }, [cwd, toast, agent]);
 
   const openItem = useCallback(
     async (item: CmdItem) => {
@@ -141,7 +145,7 @@ export function CommandsSection() {
       setRenaming(null);
       setPreview({ description: item.description, argumentHint: item.argumentHint });
       try {
-        const r = await window.desk.call<{ text: string }>('cmd:read', item.path, cwd || null);
+        const r = await window.desk.call<{ text: string }>('cmd:read', item.path, cwd || null, agent);
         if (token !== loadToken.current) return;
         savedRef.current = r.text;
         viewRef.current?.setState(makeState(r.text));
@@ -151,7 +155,7 @@ export function CommandsSection() {
         setLoadErr(errText(e));
       }
     },
-    [cwd, makeState],
+    [cwd, makeState, agent],
   );
 
   const startNew = useCallback(
@@ -248,7 +252,7 @@ export function CommandsSection() {
       if (text === savedRef.current) return;
       setSaving(true);
       try {
-        const r = await window.desk.call<CmdItem>('cmd:write', { path: m.item.path, cwd: cwd || null, text });
+        const r = await window.desk.call<CmdItem>('cmd:write', { path: m.item.path, cwd: cwd || null, text, agent });
         savedRef.current = text;
         setDirty(view.state.doc.toString() !== text);
         toast(t('commands.saved'));
@@ -271,7 +275,7 @@ export function CommandsSection() {
     const file = buildFile({ name: form.kind === 'skill' ? form.name : undefined, description: form.description, argumentHint: form.argumentHint, allowedTools: form.allowedTools }, text);
     setSaving(true);
     try {
-      const r = await window.desk.call<CmdItem>('cmd:write', { scope: form.scope, kind: form.kind, name: form.name, cwd: cwd || null, text: file });
+      const r = await window.desk.call<CmdItem>('cmd:write', { scope: form.scope, kind: form.kind, name: form.name, cwd: cwd || null, text: file, agent });
       toast(t(form.kind === 'skill' ? 'commands.skillCreated' : 'commands.commandCreated', { name: r.name }));
       after('write', r.path);
       await loadList();
@@ -295,7 +299,7 @@ export function CommandsSection() {
     });
     if (!ok) return;
     try {
-      await window.desk.call('cmd:delete', it.path, cwd || null);
+      await window.desk.call('cmd:delete', it.path, cwd || null, agent);
       toast(t('commands.movedToTrash'));
       after('delete', it.path);
       const list = await loadList();
@@ -329,7 +333,7 @@ export function CommandsSection() {
       return;
     }
     try {
-      const r = await window.desk.call<CmdItem>('cmd:rename', it.path, next, cwd || null);
+      const r = await window.desk.call<CmdItem>('cmd:rename', it.path, next, cwd || null, agent);
       setRenaming(null);
       toast(t('commands.renamed'));
       after('rename', r.path);
@@ -397,6 +401,7 @@ export function CommandsSection() {
           <RefreshCw size={14} />
         </button>
       </div>
+      <AgentTabs value={agent} onChange={setAgent} />
       <p className="muted small">
         {t('commands.intro.before')} <code>/review</code>
         {t('commands.intro.after')}

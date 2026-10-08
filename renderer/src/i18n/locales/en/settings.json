@@ -4,7 +4,7 @@
   "nav_general": "General",
   "nav_defaults": "New chats",
   "nav_claude": "Agents",
-  "nav_instr": "Instructions & hooks",
+  "nav_instr": "Instructions & settings",
   "nav_commands": "Commands & skills",
   "nav_mcp": "MCP servers",
   "nav_skills": "Skills",
@@ -89,7 +89,7 @@
   "mcpEnvPh": "Environment variables: KEY=value, comma-separated",
   "mcpAdded": "{name} added — the server will be available in new sessions",
   "skillsTitle": "Skills & commands",
-  "skillsIntro": "Skills, commands and plugin commands available to Claude. Invoke them with “/” in the composer.",
+  "skillsIntro": "Skills, commands and plugin commands the agent can use. The agent picks skills on its own; Claude's are also available through \"/\" in the composer.",
   "search": "Search",
   "statsDays_one": "{count} day",
   "statsDays_other": "{count} days",
@@ -118,5 +118,6 @@
   "claudeModel": "Claude model",
   "version": "Version",
   "agentMissing": "{name} is not available: {error}",
-  "key_switchAgent": "Switch the chat to another agent"
+  "key_switchAgent": "Switch the chat to another agent",
+  "mcpIntroCodex": "MCP servers Codex uses: from ~/.codex/config.toml and its plugins. Changes are written with codex mcp add/remove; reload applies them."
 }

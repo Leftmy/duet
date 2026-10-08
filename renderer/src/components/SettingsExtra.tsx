@@ -3,6 +3,25 @@ import { Plus, RefreshCw, RotateCw, Trash2 } from 'lucide-react';
 import { useStore, projectName } from '../store';
 import { askConfirm } from '../lib/dialog';
 import { t } from '../i18n';
+import { AgentMark } from './AgentMark';
+import type { ProviderId } from '../types';
+
+/** Tabs for sections that differ per agent (MCP servers, …). */
+export function AgentTabs({ value, onChange }: { value: ProviderId; onChange: (p: ProviderId) => void }) {
+  const providers = useStore((s) => s.providers);
+  const ids = Object.keys(providers) as ProviderId[];
+  if (ids.length < 2) return null;
+  return (
+    <div className="agent-tabs">
+      {ids.map((id) => (
+        <button key={id} className={`agent-tab ${id === value ? 'is-active' : ''}`} disabled={!providers[id].available} onClick={() => onChange(id)}>
+          <AgentMark provider={id} size={14} />
+          {providers[id].label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ---------------- MCP servers ----------------
 
@@ -20,22 +39,24 @@ export function McpManager() {
   const toast = useStore((s) => s.toast);
   const [rows, setRows] = useState<McpRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [agent, setAgent] = useState<ProviderId>('claude');
+  const isClaude = agent === 'claude';
   const [form, setForm] = useState({ name: '', transport: 'stdio' as 'stdio' | 'http' | 'sse', target: '', args: '', scope: 'user' as 'user' | 'project' | 'local', env: '' });
 
   const load = () => {
     setRows(null);
     window.desk
-      .mcpStatus()
+      .mcpStatus(agent)
       .then((r) => {
         setRows(r);
-        useStore.setState({ mcp: r });
+        if (agent === 'claude') useStore.setState({ mcp: r });
       })
       .catch((e) => {
         setRows([]);
         toast(String(e?.message ?? e), 'error');
       });
   };
-  useEffect(load, []);
+  useEffect(load, [agent]);
 
   const run = async (key: string, fn: () => Promise<unknown>, ok: string) => {
     setBusy(key);
@@ -50,7 +71,7 @@ export function McpManager() {
     }
   };
 
-  const removable = (r: McpRow) => ['user', 'project', 'local'].includes(r.scope ?? '');
+  const removable = (r: McpRow) => ['user', 'project', 'local', 'config'].includes(r.scope ?? '');
 
   return (
     <>
@@ -60,9 +81,8 @@ export function McpManager() {
           <RefreshCw size={14} />
         </button>
       </div>
-      <p className="muted small">
-        {t('settings.mcpIntro')}
-      </p>
+      <AgentTabs value={agent} onChange={setAgent} />
+      <p className="muted small">{isClaude ? t('settings.mcpIntro') : t('settings.mcpIntroCodex')}</p>
       {!rows ? (
         <div className="skeleton">
           {[80, 60, 70].map((w, i) => (
@@ -80,7 +100,7 @@ export function McpManager() {
                 {m.status === 'connected' ? t('settings.mcpTools', { count: m.tools }) : STATUS_KEYS[m.status] ? t(STATUS_KEYS[m.status]) : m.status}
                 {m.scope ? ` · ${m.scope}` : ''}
               </span>
-              <button className="icon-btn sm" title={t('settings.mcpReconnect')} disabled={!!busy} onClick={() => run(m.name, () => window.desk.mcpReconnect(m.name), t('settings.mcpReconnected', { name: m.name }))}>
+              <button className="icon-btn sm" title={t('settings.mcpReconnect')} disabled={!!busy} onClick={() => run(m.name, () => window.desk.mcpReconnect(m.name, agent), t('settings.mcpReconnected', { name: m.name }))}>
                 <RotateCw size={12} className={busy === m.name ? 'spin' : ''} />
               </button>
               {removable(m) && (
@@ -90,7 +110,7 @@ export function McpManager() {
                   disabled={!!busy}
                   onClick={async () =>
                     (await askConfirm({ title: t('settings.mcpRemoveTitle'), message: t('settings.mcpRemoveMessage', { name: m.name }), confirmLabel: t('common.delete'), danger: true })) &&
-                    run(m.name, () => window.desk.mcpRemove(m.name, m.scope), t('settings.mcpRemoved', { name: m.name }))
+                    run(m.name, () => window.desk.mcpRemove(m.name, m.scope, agent), t('settings.mcpRemoved', { name: m.name }))
                   }
                 >
                   <Trash2 size={12} />
@@ -107,13 +127,15 @@ export function McpManager() {
         <select className="input select" value={form.transport} onChange={(e) => setForm({ ...form, transport: e.target.value as any })}>
           <option value="stdio">{t('settings.mcpStdio')}</option>
           <option value="http">HTTP</option>
-          <option value="sse">SSE</option>
+          {isClaude && <option value="sse">SSE</option>}
         </select>
-        <select className="input select" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value as any })}>
-          <option value="user">{t('settings.mcpScopeUser')}</option>
-          <option value="local">{t('settings.mcpScopeLocal')}</option>
-          <option value="project">{t('settings.mcpScopeProject')}</option>
-        </select>
+        {isClaude && (
+          <select className="input select" value={form.scope} onChange={(e) => setForm({ ...form, scope: e.target.value as any })}>
+            <option value="user">{t('settings.mcpScopeUser')}</option>
+            <option value="local">{t('settings.mcpScopeLocal')}</option>
+            <option value="project">{t('settings.mcpScopeProject')}</option>
+          </select>
+        )}
         <input
           className="input mcp-wide"
           placeholder={form.transport === 'stdio' ? t('settings.mcpCommandPh') : t('settings.mcpUrlPh')}
@@ -134,6 +156,7 @@ export function McpManager() {
               'add',
               () =>
                 window.desk.mcpAdd({
+                  provider: agent,
                   name: form.name.trim(),
                   transport: form.transport,
                   target: form.target.trim(),
@@ -161,12 +184,25 @@ export function McpManager() {
 // ---------------- Skills ----------------
 
 export function SkillsList() {
-  const commands = useStore((s) => s.commands);
+  const claudeCommands = useStore((s) => s.commands);
+  const cwd = useStore((s) => s.threads[s.activeId]?.cwd || '');
+  const [agent, setAgent] = useState<ProviderId>('claude');
+  const [other, setOther] = useState<{ name: string; description: string }[] | null>(null);
+  useEffect(() => {
+    if (agent === 'claude') return;
+    setOther(null);
+    window.desk
+      .call<{ name: string; description: string }[]>('desk:skills', agent, cwd || null)
+      .then(setOther)
+      .catch(() => setOther([]));
+  }, [agent, cwd]);
+  const commands = agent === 'claude' ? claudeCommands : other ?? [];
   const [q, setQ] = useState('');
   const list = commands.filter((c) => !q || (c.name + ' ' + c.description).toLowerCase().includes(q.toLowerCase()));
   return (
     <>
       <h2>{t('settings.skillsTitle')}</h2>
+      <AgentTabs value={agent} onChange={setAgent} />
       <p className="muted small">{t('settings.skillsIntro')}</p>
       <input className="input" placeholder={t('settings.search')} value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="mcp-list" style={{ marginTop: 10 }}>

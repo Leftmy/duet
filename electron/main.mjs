@@ -284,6 +284,8 @@ handle('app:gitPull', (root) => gitPull(root));
 handle('app:gitDiscard', (root, file, untracked) => gitDiscard(root, file, untracked));
 handle('app:gitBranches', (root) => gitBranches(root));
 handle('app:gitCheckout', (root, branch, create) => gitCheckout(root, branch, create));
+// Skills an agent offers in a folder (agents whose skills aren't in the probe's command list).
+handle('desk:skills', (provider, cwd) => registry.get(provider).skills?.(cwd) ?? []);
 // Condenses the older part of a conversation handed over to another agent.
 handle('desk:summarize', (text) =>
   core.quickText({
@@ -359,16 +361,19 @@ const runCli = (args) =>
       err ? reject(new Error((errOut || out || err.message).toString().trim())) : resolve(out.toString().trim()),
     ),
   );
-handle('mcp:status', () => core.mcpStatus());
-handle('mcp:reconnect', (name) => core.mcpReconnect(name));
-handle('mcp:add', ({ name, transport, target, args = [], scope = 'user', env = {} }) => {
+handle('mcp:status', (provider) => core.mcpStatus(provider));
+handle('mcp:reconnect', (name, provider) => core.mcpReconnect(name, provider));
+handle('mcp:add', ({ name, transport, target, args = [], scope = 'user', env = {}, provider }) => {
   if (!/^[\w.:-]+$/.test(name)) throw new Error(t('main.mcpBadName'));
+  if (provider && provider !== 'claude') return registry.get(provider).mcpAdd({ name, transport, target, args, env });
   const envArgs = Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
   return transport === 'stdio'
     ? runCli(['mcp', 'add', '-s', scope, ...envArgs, name, '--', target, ...args])
     : runCli(['mcp', 'add', '--transport', transport, '-s', scope, name, target]);
 });
-handle('mcp:remove', (name, scope) => runCli(['mcp', 'remove', name, ...(scope ? ['-s', scope] : [])]));
+handle('mcp:remove', (name, scope, provider) =>
+  provider && provider !== 'claude' ? registry.get(provider).mcpRemove(name) : runCli(['mcp', 'remove', name, ...(scope ? ['-s', scope] : [])]),
+);
 
 // ---------- self-update (dev checkout only) ----------
 const startedAt = Date.now();

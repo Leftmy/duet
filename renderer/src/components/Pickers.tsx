@@ -4,7 +4,6 @@ import {
   ArrowDownToLine,
   ArrowLeft,
   ArrowLeftRight,
-  Bot,
   ChevronDown,
   GitFork,
   Laptop,
@@ -26,6 +25,7 @@ import type { Effort, PermMode, ProviderId, Thread } from '../types';
 import { modelsOf, projectName, useStore } from '../store';
 import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel } from '../lib/format';
 import { MenuItem, Popover, spring } from './Popover';
+import { AgentMark } from './AgentMark';
 import { t } from '../i18n';
 
 const PERM_ICONS: Record<PermMode, typeof ShieldCheck> = {
@@ -53,7 +53,7 @@ export function ProviderPicker({ thread }: { thread: Thread }) {
       width={300}
       trigger={() => (
         <button className="pill" title={t('pickers.agentTitle')} onClick={() => setOpen((v) => !v)}>
-          <Bot size={14} />
+          <AgentMark provider={thread.provider} size={14} />
           <span>{label}</span>
         </button>
       )}
@@ -64,7 +64,8 @@ export function ProviderPicker({ thread }: { thread: Thread }) {
       {list.map(([id, p]) => (
         <MenuItem
           key={id}
-          icon={id === thread.provider ? <Bot size={15} /> : <ArrowLeftRight size={15} />}
+          icon={<AgentMark provider={id} size={15} />}
+          right={id !== thread.provider && started && p.available ? <ArrowLeftRight size={13} className="muted" /> : undefined}
           label={p.label}
           hint={
             !p.available

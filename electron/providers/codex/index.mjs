@@ -2,6 +2,7 @@
 // process serves every chat; each run is one Codex thread. Desk toolsets are given to Codex as
 // dynamic tools, and approval requests go through the core's broker like Claude's.
 import os from 'node:os';
+import { execFile } from 'node:child_process';
 import { AppServer, findCodex } from './rpc.mjs';
 import { createTranslator, historyEvents, subagentEvents, limitsEvent } from './translate.mjs';
 import { rolloutEvents } from './rollout.mjs';
@@ -53,6 +54,17 @@ async function allTurns(srv, threadId) {
     cursor = r.nextCursor;
   } while (cursor);
   return turns;
+}
+
+/** Runs the codex CLI (the same binary the app server uses). */
+function codexCli(args) {
+  const codex = findCodex();
+  if (!codex) return Promise.reject(new Error('Codex CLI not found'));
+  return new Promise((resolve, reject) =>
+    execFile(codex.bin, args, { env: { ...process.env, ...codex.env }, windowsHide: true, timeout: 60000 }, (err, out, errOut) =>
+      err ? reject(new Error((errOut || out || err.message).toString().trim())) : resolve(out.toString().trim()),
+    ),
+  );
 }
 
 const userInput = (text, images = []) => [
@@ -141,6 +153,7 @@ export function createCodexProvider({ log = () => {} } = {}) {
   return {
     id: 'codex',
     label: 'Codex',
+    brand: { color: '#10A37F', mark: 'X' },
     caps: {
       steer: true,
       interrupt: true,
@@ -358,6 +371,37 @@ export function createCodexProvider({ log = () => {} } = {}) {
         usage: limits?.rateLimits ? limitsEvent(limits.rateLimits) : null,
       };
     },
+
+    /** Skills Codex can use in a folder (user, project and built-in ones). */
+    async skills(cwd) {
+      const srv = await ensureServer();
+      const r = await srv.request('skills/list', { cwds: [cwd || os.homedir()] });
+      return (r.data ?? []).flatMap((x) => x.skills ?? []).filter((k) => k.enabled !== false).map((k) => ({ name: k.name, description: k.description ?? '', scope: k.scope }));
+    },
+
+    /** MCP servers Codex knows (config.toml and plugins). */
+    async mcpStatus() {
+      const srv = await ensureServer();
+      const r = await srv.request('mcpServerStatus/list', {});
+      return (r.data ?? []).map((m) => {
+        const tools = m.tools ? Object.keys(m.tools).length : 0;
+        const status = m.toolsError ? 'failed' : m.authStatus === 'notLoggedIn' ? 'needs-auth' : 'connected';
+        return { name: m.name, status, tools, scope: m.pluginId ? 'plugin' : 'config', ...(m.toolsError ? { error: String(m.toolsError) } : {}) };
+      });
+    },
+
+    /** Reloads MCP servers from config (Codex has no per-server reconnect). */
+    async mcpReconnect() {
+      const srv = await ensureServer();
+      await srv.request('config/mcpServer/reload', undefined);
+    },
+
+    /** codex mcp add/remove (writes ~/.codex/config.toml). */
+    mcpAdd({ name, transport, target, args = [], env = {} }) {
+      const envArgs = Object.entries(env).flatMap(([k, v]) => ['--env', `${k}=${v}`]);
+      return codexCli(transport === 'stdio' ? ['mcp', 'add', ...envArgs, name, '--', target, ...args] : ['mcp', 'add', name, '--url', target]);
+    },
+    mcpRemove: (name) => codexCli(['mcp', 'remove', name]),
 
     async usage() {
       const srv = await ensureServer();

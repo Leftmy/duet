@@ -7,6 +7,8 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { markdown } from '@codemirror/lang-markdown';
 import { json } from '@codemirror/lang-json';
 import { useStore } from '../../store';
+import { AgentMark } from '../../components/AgentMark';
+import type { ProviderId } from '../../types';
 import { askConfirm } from '../../lib/dialog';
 import { basename } from '../../lib/format';
 import { t } from '../../i18n';
@@ -14,11 +16,13 @@ import './instructions.css';
 
 export interface InstrDoc {
   id: string;
+  /** Agent that reads the file. */
+  agent: ProviderId;
   group: 'global' | 'project' | 'memory';
   label: string;
   path: string;
   exists: boolean;
-  kind: 'md' | 'json';
+  kind: 'md' | 'json' | 'toml';
   size: number;
 }
 
@@ -56,8 +60,15 @@ const sizeLabel = (n: number) => (n < 1024 ? t('instructions.size.bytes', { n })
 
 function DocIcon({ doc }: { doc: InstrDoc }) {
   if (doc.group === 'memory') return <Brain size={13} />;
-  return doc.kind === 'json' ? <Braces size={13} /> : <FileText size={13} />;
+  return doc.kind === 'md' ? <FileText size={13} /> : <Braces size={13} />;
 }
+
+/** The same kind of instructions file of another agent in the same scope (CLAUDE.md ↔ AGENTS.md). */
+const MAIN_INSTRUCTIONS = /^(CLAUDE|AGENTS)\.md$/i;
+const counterpart = (docs: InstrDoc[] | null, doc: InstrDoc) =>
+  MAIN_INSTRUCTIONS.test(basename(doc.path))
+    ? docs?.find((d) => d.agent !== doc.agent && d.group === doc.group && d.exists && MAIN_INSTRUCTIONS.test(basename(d.path)))
+    : undefined;
 
 export function InstructionsSection() {
   const cwd = useStore((s) => s.threads[s.activeId]?.cwd || '');
@@ -70,6 +81,10 @@ export function InstructionsSection() {
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [hooks, setHooks] = useState<InstrHook[]>([]);
   const [saving, setSaving] = useState(false);
+  /** A new file prefilled from another agent's instructions. */
+  const [prefilled, setPrefilled] = useState<string | null>(null);
+  const docsRef = useRef<InstrDoc[] | null>(null);
+  docsRef.current = docs;
 
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -94,7 +109,7 @@ export function InstructionsSection() {
         doc: text,
         extensions: [
           basicSetup,
-          doc.kind === 'json' ? json() : [markdown(), EditorView.lineWrapping],
+          doc.kind === 'json' ? json() : doc.kind === 'toml' ? [] : [markdown(), EditorView.lineWrapping],
           themeComp.current.of(dark ? oneDark : []),
           keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => (saveRef.current(), true) }]),
           EditorView.updateListener.of((u) => {
@@ -119,11 +134,18 @@ export function InstructionsSection() {
       setDirty(false);
       setJsonErr(null);
       setLoadErr(null);
+      setPrefilled(null);
       try {
         const r = await window.desk.call<{ text: string; exists: boolean }>('instr:read', doc.path);
         if (token !== loadToken.current) return;
-        const text = r.exists ? r.text : doc.kind === 'json' ? JSON_TEMPLATE : '';
-        savedRef.current = text;
+        // A missing instructions file starts as a copy of the other agent's one, so both follow the same rules.
+        const source = !r.exists ? counterpart(docsRef.current, doc) : undefined;
+        const copy = source ? await window.desk.call<{ text: string; exists: boolean }>('instr:read', source.path).catch(() => null) : null;
+        if (token !== loadToken.current) return;
+        if (copy?.text) setPrefilled(basename(source!.path));
+        const text = r.exists ? r.text : copy?.text ? copy.text : doc.kind === 'json' ? JSON_TEMPLATE : '';
+        // A prefilled copy counts as unsaved, so Create is offered.
+        savedRef.current = r.exists ? text : '';
         viewRef.current?.setState(makeState(doc, text));
         if (doc.kind === 'json' && r.exists && text.trim()) setJsonErr(jsonError(text));
         if (r.exists !== doc.exists) setSel({ ...doc, exists: r.exists });
@@ -230,7 +252,7 @@ export function InstructionsSection() {
   // Show paths under the user profile as "~\...".
   const home = useMemo(() => {
     const g = docs?.find((d) => d.group === 'global');
-    return g ? g.path.replace(/[\\/]\.claude[\\/][^\\/]+$/, '') : '';
+    return g ? g.path.replace(/[\\/]\.(claude|codex)[\\/][^\\/]+$/, '') : '';
   }, [docs]);
   const shownPath = (p: string) => (home && p.toLowerCase().startsWith(home.toLowerCase()) ? '~' + p.slice(home.length) : p);
 
@@ -267,10 +289,12 @@ export function InstructionsSection() {
                       title={d.path}
                       onClick={() => select(d)}
                     >
-                      <DocIcon doc={d} />
+                      <AgentMark provider={d.agent} size={13} />
                       <span className="instr-item-text">
                         <span className="truncate">{d.label}</span>
-                        <span className="instr-item-meta">{d.exists ? sizeLabel(d.size) : t('instructions.notCreated')}</span>
+                        <span className="instr-item-meta">
+                          <DocIcon doc={d} /> {basename(d.path)} · {d.exists ? sizeLabel(d.size) : t('instructions.notCreated')}
+                        </span>
                       </span>
                     </button>
                   ))}
@@ -296,6 +320,7 @@ export function InstructionsSection() {
           </div>
           <div ref={hostRef} className="cm-host instr-editor" style={{ display: loadErr ? 'none' : 'block' }} />
           {loadErr && <div className="instr-editor instr-load-err muted small">{loadErr}</div>}
+          {prefilled && sel && !sel.exists && <div className="muted small">{t('instructions.prefilled', { from: prefilled, name: basename(sel.path) })}</div>}
           {jsonErr && <div className="instr-error small">{jsonErr}</div>}
         </div>
       </div>

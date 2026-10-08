@@ -1,4 +1,5 @@
-// Editor backend for Claude Code instructions (CLAUDE.md), settings/hooks and per-project memory.
+// Editor backend for the files agents read in every session: Claude Code's instructions (CLAUDE.md),
+// settings/hooks and per-project memory, and Codex's instructions (AGENTS.md) and config.toml.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ const MAX_READ = 2 * 1024 * 1024;
 const HOOK_SOURCES = ['user', 'project', 'local'];
 
 const claudeHome = () => path.join(os.homedir(), '.claude');
+const codexHome = () => path.join(os.homedir(), '.codex');
 const projectsDir = () => path.join(claudeHome(), 'projects');
 const norm = (p) => {
   const r = path.resolve(p);
@@ -40,7 +42,12 @@ function settingsPaths(cwd) {
   return out;
 }
 
-function doc(group, label, file) {
+const kindOf = (file) => {
+  const f = file.toLowerCase();
+  return f.endsWith('.json') ? 'json' : f.endsWith('.toml') ? 'toml' : 'md';
+};
+
+function doc(agent, group, label, file) {
   let st = null;
   try {
     st = fs.statSync(file);
@@ -48,11 +55,12 @@ function doc(group, label, file) {
   } catch {}
   return {
     id: file,
+    agent,
     group,
     label,
     path: file,
     exists: !!st,
-    kind: file.toLowerCase().endsWith('.json') ? 'json' : 'md',
+    kind: kindOf(file),
     size: st ? st.size : 0,
   };
 }
@@ -60,15 +68,19 @@ function doc(group, label, file) {
 export function listDocs(cwd) {
   const home = claudeHome();
   const docs = [
-    doc('global', t('instructions.doc.globalInstructions'), path.join(home, 'CLAUDE.md')),
-    doc('global', t('instructions.doc.userSettings'), path.join(home, 'settings.json')),
+    doc('claude', 'global', t('instructions.doc.globalInstructions'), path.join(home, 'CLAUDE.md')),
+    doc('claude', 'global', t('instructions.doc.userSettings'), path.join(home, 'settings.json')),
+    doc('codex', 'global', t('instructions.doc.globalInstructions'), path.join(codexHome(), 'AGENTS.md')),
+    doc('codex', 'global', t('instructions.doc.codexConfig'), path.join(codexHome(), 'config.toml')),
   ];
   if (!cwd) return docs;
   docs.push(
-    doc('project', t('instructions.doc.projectInstructions'), path.join(cwd, 'CLAUDE.md')),
-    doc('project', t('instructions.doc.projectLocalInstructions'), path.join(cwd, 'CLAUDE.local.md')),
-    doc('project', t('instructions.doc.projectSettings'), path.join(cwd, '.claude', 'settings.json')),
-    doc('project', t('instructions.doc.projectLocalSettings'), path.join(cwd, '.claude', 'settings.local.json')),
+    doc('claude', 'project', t('instructions.doc.projectInstructions'), path.join(cwd, 'CLAUDE.md')),
+    doc('claude', 'project', t('instructions.doc.projectLocalInstructions'), path.join(cwd, 'CLAUDE.local.md')),
+    doc('claude', 'project', t('instructions.doc.projectSettings'), path.join(cwd, '.claude', 'settings.json')),
+    doc('claude', 'project', t('instructions.doc.projectLocalSettings'), path.join(cwd, '.claude', 'settings.local.json')),
+    doc('codex', 'project', t('instructions.doc.projectInstructions'), path.join(cwd, 'AGENTS.md')),
+    doc('codex', 'project', t('instructions.doc.codexProjectConfig'), path.join(cwd, '.codex', 'config.toml')),
   );
   const mem = memoryDir(cwd);
   let names = [];
@@ -79,7 +91,7 @@ export function listDocs(cwd) {
       .map((e) => e.name);
   } catch {}
   names.sort((a, b) => (a === 'MEMORY.md' ? -1 : b === 'MEMORY.md' ? 1 : a.localeCompare(b)));
-  for (const n of names) docs.push(doc('memory', n === 'MEMORY.md' ? t('instructions.doc.memoryIndex') : n.replace(/\.md$/i, ''), path.join(mem, n)));
+  for (const n of names) docs.push(doc('claude', 'memory', n === 'MEMORY.md' ? t('instructions.doc.memoryIndex') : n.replace(/\.md$/i, ''), path.join(mem, n)));
   return docs;
 }
 
@@ -88,9 +100,11 @@ export function isAllowed(file) {
   if (typeof file !== 'string' || !file || !path.isAbsolute(file)) return false;
   const p = norm(file);
   if (p === norm(path.join(claudeHome(), 'CLAUDE.md')) || p === norm(path.join(claudeHome(), 'settings.json'))) return true;
+  if (p === norm(path.join(codexHome(), 'AGENTS.md')) || p === norm(path.join(codexHome(), 'config.toml'))) return true;
   const base = path.basename(file);
   const parent = path.basename(path.dirname(file));
-  if (base === 'CLAUDE.md' || base === 'CLAUDE.local.md') return true;
+  if (base === 'CLAUDE.md' || base === 'CLAUDE.local.md' || base === 'AGENTS.md') return true;
+  if (base === 'config.toml' && parent === '.codex') return true;
   if ((base === 'settings.json' || base === 'settings.local.json') && parent === '.claude') return true;
   // ~/.claude/projects/<encoded>/memory/<name>.md
   const dir = path.dirname(p);

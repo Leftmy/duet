@@ -189,6 +189,7 @@ export function createClaudeProvider({ stats, log = () => {} }) {
   return {
     id: 'claude',
     label: 'Claude',
+    brand: { color: '#D97757', mark: 'C' },
     caps: {
       steer: true,
       interrupt: true,

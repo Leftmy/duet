@@ -164,10 +164,10 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
       const entries = await Promise.all(
         registry.all().map(async (p) => {
           try {
-            return [p.id, { ...(await p.probe(force)), label: p.label, caps: p.caps }];
+            return [p.id, { ...(await p.probe(force)), label: p.label, brand: p.brand, caps: p.caps }];
           } catch (e) {
             log('probe failed', p.id, String(e?.message || e));
-            return [p.id, { available: false, error: String(e?.message || e), label: p.label, caps: p.caps, models: [] }];
+            return [p.id, { available: false, error: String(e?.message || e), label: p.label, brand: p.brand, caps: p.caps, models: [] }];
           }
         }),
       );
@@ -426,8 +426,8 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
     },
 
     runHeadless: ({ provider, ...opts }) => registry.get(provider).runHeadless({ tools: toolsFor(`headless-${randomUUID()}`), ...opts }),
-    mcpStatus: () => registry.get('claude').mcpStatus(),
-    mcpReconnect: (name) => registry.get('claude').mcpReconnect(name),
+    mcpStatus: (provider) => registry.get(provider).mcpStatus?.() ?? [],
+    mcpReconnect: (name, provider) => registry.get(provider).mcpReconnect?.(name),
 
     // ---------- small completions (Claude Haiku, whatever agent the chat uses) ----------
 

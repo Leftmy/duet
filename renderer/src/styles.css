@@ -367,6 +367,61 @@ button {
 .usage-fill.danger {
   background: var(--danger);
 }
+.agents-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.agent-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 5px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.agent-usage:hover {
+  background: var(--bg-hover);
+}
+.agent-usage-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+}
+.agent-usage-name {
+  font-weight: 600;
+}
+.agent-usage-bars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.mini-bar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mini-bar-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+.mini-bar .usage-track {
+  margin-top: 3px;
+  height: 3px;
+}
+.mini-bar .usage-fill {
+  display: block;
+}
 .account {
   display: flex;
   align-items: center;
@@ -2976,6 +3031,37 @@ kbd.key {
   color: var(--text-2);
   text-transform: uppercase;
 }
+.agent-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0 10px;
+}
+.agent-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.agent-tab.is-active {
+  border-color: var(--border-strong);
+  background: var(--bg-active);
+  color: var(--text);
+}
+.agent-tab:disabled {
+  opacity: 0.45;
+}
+.agent-h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.agent-divider .agent-mark {
+  margin-right: -6px;
+}
 .agent-divider .chapter-title {
   font-weight: 500;
   text-transform: none;
@@ -3169,20 +3255,26 @@ kbd.key {
 .chain-badge + .dot-run {
   margin-left: 6px;
 }
-.agent-badge {
+.agent-mark {
+  display: inline-grid;
+  place-items: center;
   flex-shrink: 0;
-  margin-left: auto;
-  font-size: 10px;
-  padding: 0 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border-strong);
-  color: var(--text-2);
-  line-height: 15px;
+  color: #fff;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
 }
-.agent-badge + .chain-badge,
-.agent-badge + .row-time,
-.agent-badge + .dot-run {
-  margin-left: 6px;
+.agent-marks {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.agent-marks .agent-mark + .agent-mark {
+  margin-left: -4px;
+  box-shadow: 0 0 0 1.5px var(--bg-side, var(--bg));
+}
+.thread-row .agent-mark,
+.thread-row .agent-marks {
+  opacity: 0.9;
 }
 .thread-row.chain-part {
   padding-left: 46px;

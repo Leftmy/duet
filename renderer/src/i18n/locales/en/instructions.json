@@ -1,7 +1,7 @@
 {
-  "title": "Instructions & hooks",
+  "title": "Instructions & settings",
   "reload": "Reload from disk",
-  "intro": "Claude Code reads these files in every session: instructions (CLAUDE.md), settings with hooks, and project memory notes.",
+  "intro": "Files the agents read in every session: Claude — CLAUDE.md, settings.json with hooks and project memory; Codex — AGENTS.md and config.toml.",
   "intro.noProject": "Open a chat in a project to see its files and memory.",
   "group.global": "Global",
   "group.project": "Project",
@@ -33,5 +33,6 @@
   "hooks.intro2": "); leave it empty to match all. Hooks are defined in the",
   "hooks.intro3": "section of the settings files and apply to new sessions.",
   "hooks.none": "No hooks.",
-  "hooks.all": "all"
+  "hooks.all": "all",
+  "prefilled": "Filled in from {from} — create {name} to give this agent the same instructions."
 }

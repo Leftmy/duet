@@ -27,6 +27,8 @@ export interface ProviderProbe {
   available: boolean;
   error?: string;
   label: string;
+  /** Colour and letter that mark the agent's chats. */
+  brand?: { color: string; mark: string };
   version?: string;
   models: any[];
   account?: any;
@@ -87,10 +89,10 @@ declare global {
       onTermData(cb: (e: { id: string; data: string }) => void): Unsubscribe;
       onTermExit(cb: (e: { id: string; exitCode: number }) => void): Unsubscribe;
       statsSummary(days: number): Promise<{ turns: any[]; limits: any[] }>;
-      mcpStatus(): Promise<{ name: string; status: string; scope?: string; tools: number; error?: string }[]>;
-      mcpReconnect(name: string): Promise<void>;
-      mcpAdd(p: { name: string; transport: 'stdio' | 'http' | 'sse'; target: string; args?: string[]; scope?: 'user' | 'project' | 'local'; env?: Record<string, string> }): Promise<string>;
-      mcpRemove(name: string, scope?: string): Promise<string>;
+      mcpStatus(provider?: ProviderId): Promise<{ name: string; status: string; scope?: string; tools: number; error?: string }[]>;
+      mcpReconnect(name: string, provider?: ProviderId): Promise<void>;
+      mcpAdd(p: { name: string; transport: 'stdio' | 'http' | 'sse'; target: string; args?: string[]; scope?: 'user' | 'project' | 'local'; env?: Record<string, string>; provider?: ProviderId }): Promise<string>;
+      mcpRemove(name: string, scope?: string, provider?: ProviderId): Promise<string>;
       buildInfo(): Promise<{ canRebuild: boolean; newer: boolean }>;
       rebuild(): Promise<boolean>;
       relaunch(): Promise<void>;

@@ -2,11 +2,13 @@
 // that implements the contract below, plus one register() call in main.mjs.
 //
 // Provider contract (see renderer/src/events.ts for the event format):
-//   id, label, caps                         caps: { steer, interrupt, images, fork, rollback: 'anchor' | 'turns' | false,
-//                                                   rewindFiles, subagents, backgroundTasks, contextUsage, slashCommands,
-//                                                   segments, chrome, modes: PermMode[] }
+//   id, label
+//   brand: { color, mark }                  how the UI marks the agent's chats (a colour and a letter)
+//   caps: { steer, interrupt, images, fork, rollback: 'anchor' | 'turns' | false,
+//           rewindFiles, subagents, backgroundTasks, contextUsage, slashCommands,
+//           segments, chrome, modes: PermMode[] }
 //   open(spec, sink) → run                  spec: { threadId, cwd, dirs, model, effort, permissionMode, resume, resumeAt,
-//                                                   instructions, mcp: [{ name, url, headers }], chrome }
+//                                                   instructions, tools: Toolset[] (core/tools.mjs), chrome }
 //                                           sink: { event(ev), approval(req) → Promise<{ decision, updatedInput?, message? }>,
 //                                                   closed({ error?, stderr? }) }
 //                                           run:  { send({ text, images, uuid, priority }), configure({ model, effort, permissionMode }),

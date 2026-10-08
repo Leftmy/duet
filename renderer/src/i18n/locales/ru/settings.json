@@ -4,7 +4,7 @@
   "nav_general": "Общие",
   "nav_defaults": "Новые чаты",
   "nav_claude": "Агенты",
-  "nav_instr": "Инструкции и хуки",
+  "nav_instr": "Инструкции и настройки",
   "nav_commands": "Команды и навыки",
   "nav_mcp": "MCP-серверы",
   "nav_skills": "Навыки",
@@ -91,7 +91,7 @@
   "mcpEnvPh": "Переменные окружения: KEY=value, через запятую",
   "mcpAdded": "{name} добавлен — сервер появится в новых сессиях",
   "skillsTitle": "Навыки и команды",
-  "skillsIntro": "Навыки (skills), команды и команды плагинов, доступные Claude. Вызываются через «/» в поле ввода.",
+  "skillsIntro": "Навыки (skills), команды и команды плагинов, доступные агенту. Навыки агент подключает сам; у Claude они также вызываются через «/» в поле ввода.",
   "search": "Поиск",
   "statsDays_one": "{count} день",
   "statsDays_few": "{count} дня",
@@ -122,5 +122,6 @@
   "claudeModel": "Модель Claude",
   "version": "Версия",
   "agentMissing": "{name} недоступен: {error}",
-  "key_switchAgent": "Переключить чат на другого агента"
+  "key_switchAgent": "Переключить чат на другого агента",
+  "mcpIntroCodex": "MCP-серверы, которые использует Codex: из ~/.codex/config.toml и его плагинов. Изменения записываются через codex mcp add/remove, перезагрузка применяет их."
 }

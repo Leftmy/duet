@@ -18,5 +18,6 @@
   "noProject": "No project selected",
   "emptyContent": "Empty content",
   "skillExists": "Skill “{name}” already exists",
-  "commandExists": "Command “/{name}” already exists"
+  "commandExists": "Command “/{name}” already exists",
+  "noProjectCommands": "This agent reads custom commands only from your user folder; create it there or make it a skill."
 }

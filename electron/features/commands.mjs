@@ -1,5 +1,6 @@
-// Editor backend for Claude Code custom slash commands (.claude/commands/**/*.md) and skills (.claude/skills/<name>/SKILL.md),
-// user scope (~/.claude) and project scope (<cwd>/.claude). Deleted items are moved to ~/.claude/.desk-trash.
+// Editor backend for agents' custom slash commands and skills, user scope (~/.<agent>) and project scope (<cwd>/.<agent>).
+// Claude Code: .claude/commands/**/*.md and .claude/skills/<name>/SKILL.md. Codex: ~/.codex/prompts/*.md (user
+// scope only) and .codex/skills/<name>/SKILL.md. Deleted items are moved to ~/.<agent>/.desk-trash.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -137,23 +138,30 @@ export function validateName(kind, name) {
   return segs;
 }
 
-/** All operations bound to a home directory (injectable for tests). */
-export function createCommandsApi({ home = os.homedir() } = {}) {
-  const claudeHome = path.join(home, '.claude');
+/** Where each agent keeps them: config folder name, commands folder, and whether projects can have commands. */
+const LAYOUTS = {
+  claude: { dir: '.claude', commands: 'commands', projectCommands: true },
+  codex: { dir: '.codex', commands: 'prompts', projectCommands: false },
+};
+
+/** All operations bound to a home directory and an agent (injectable for tests). */
+export function createCommandsApi({ home = os.homedir(), agent = 'claude' } = {}) {
+  const layout = LAYOUTS[agent] ?? LAYOUTS.claude;
+  const claudeHome = path.join(home, layout.dir);
   const trashDir = path.join(claudeHome, '.desk-trash');
 
   const projectBase = (cwd) => {
     if (!cwd) return null;
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new Error(t('commands.badProjectFolder'));
-    // A project opened at the home folder shares ~/.claude with user scope.
+    // A project opened at the home folder shares the user scope folder.
     if (norm(cwd) === norm(home)) return null;
-    return path.join(path.resolve(cwd), '.claude');
+    return path.join(path.resolve(cwd), layout.dir);
   };
 
   const roots = (cwd) => {
-    const out = { user: { commands: path.join(claudeHome, 'commands'), skills: path.join(claudeHome, 'skills') } };
+    const out = { user: { commands: path.join(claudeHome, layout.commands), skills: path.join(claudeHome, 'skills') } };
     const pb = projectBase(cwd);
-    if (pb) out.project = { commands: path.join(pb, 'commands'), skills: path.join(pb, 'skills') };
+    if (pb) out.project = { commands: layout.projectCommands ? path.join(pb, layout.commands) : null, skills: path.join(pb, 'skills') };
     return out;
   };
 
@@ -165,7 +173,7 @@ export function createCommandsApi({ home = os.homedir() } = {}) {
     for (const scope of ['user', 'project']) {
       if (!r[scope]) continue;
       const cRoot = r[scope].commands;
-      if (inside(cRoot, file)) {
+      if (cRoot && inside(cRoot, file)) {
         const rel = path.relative(cRoot, path.resolve(file)).split(/[\\/]/);
         if (rel.length > MAX_DEPTH || !/\.md$/i.test(rel.at(-1)) || /^skill\.md$/i.test(rel.at(-1))) break;
         if (rel.some((s) => s.startsWith('.'))) break;
@@ -232,7 +240,7 @@ export function createCommandsApi({ home = os.homedir() } = {}) {
     const out = [];
     for (const scope of ['user', 'project']) {
       if (!r[scope]) continue;
-      out.push(...listCommands(scope, r[scope].commands), ...listSkills(scope, r[scope].skills));
+      out.push(...(r[scope].commands ? listCommands(scope, r[scope].commands) : []), ...listSkills(scope, r[scope].skills));
     }
     const order = { user: 0, project: 1 };
     return out.sort((a, b) => order[a.scope] - order[b.scope] || a.name.localeCompare(b.name));
@@ -260,6 +268,7 @@ export function createCommandsApi({ home = os.homedir() } = {}) {
     const segs = validateName(kind, name);
     if (kind === 'command') {
       const root = r[scope].commands;
+      if (!root) throw new Error(t('commands.noProjectCommands'));
       return { root, file: path.join(root, ...segs.slice(0, -1), segs.at(-1) + '.md') };
     }
     const root = r[scope].skills;
@@ -359,27 +368,28 @@ function safeIsDir(p) {
 }
 
 export function register(ctx) {
-  const api = createCommandsApi({ home: ctx.homeDir || os.homedir() });
+  const apis = Object.fromEntries(Object.keys(LAYOUTS).map((a) => [a, createCommandsApi({ home: ctx.homeDir || os.homedir(), agent: a })]));
+  const api = (agent) => apis[agent] ?? apis.claude;
   const changed = (detail) => {
     try {
       ctx.emit?.('cmd:changed', detail);
     } catch {}
   };
-  ctx.handle('cmd:list', (cwd) => api.list(cwd || null));
-  ctx.handle('cmd:paths', (cwd) => api.paths(cwd || null));
-  ctx.handle('cmd:read', (file, cwd) => api.read(file, cwd || null));
+  ctx.handle('cmd:list', (cwd, agent) => api(agent).list(cwd || null));
+  ctx.handle('cmd:paths', (cwd, agent) => api(agent).paths(cwd || null));
+  ctx.handle('cmd:read', (file, cwd, agent) => api(agent).read(file, cwd || null));
   ctx.handle('cmd:write', (opts) => {
-    const r = api.write(opts);
+    const r = api(opts?.agent).write(opts);
     changed({ op: 'write', path: r.path });
     return r;
   });
-  ctx.handle('cmd:delete', (file, cwd) => {
-    const r = api.remove(file, cwd || null);
+  ctx.handle('cmd:delete', (file, cwd, agent) => {
+    const r = api(agent).remove(file, cwd || null);
     changed({ op: 'delete', path: file });
     return r;
   });
-  ctx.handle('cmd:rename', (file, newName, cwd) => {
-    const r = api.rename(file, newName, cwd || null);
+  ctx.handle('cmd:rename', (file, newName, cwd, agent) => {
+    const r = api(agent).rename(file, newName, cwd || null);
     changed({ op: 'rename', path: r.path, from: file });
     return r;
   });

@@ -63,5 +63,7 @@
   "theme_system": "системная",
   "theme_dark": "тёмная",
   "theme_light": "светлая",
-  "agentHint": "Чат с {name}"
+  "usageSessionShort": "5 ч",
+  "usageWeekShort": "Неделя",
+  "agentUsageHint": "Лимиты подписки · открыть настройки"
 }
