@@ -472,3 +472,5 @@ export function createCodexProvider({ log = () => {} } = {}) {
     },
   };
 }
+
+export default createCodexProvider;

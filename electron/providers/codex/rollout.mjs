@@ -2,7 +2,7 @@
 // thread/read only rebuilds messages and file changes; the rollout also has every shell command,
 // tool call and reasoning summary, so history is read from it.
 import fs from 'node:fs';
-import { stripAnsi } from './translate.mjs';
+import { itemEvents, stripAnsi, userInputText } from './translate.mjs';
 
 const SHELL_TOOLS = new Set(['shell', 'shell_command', 'exec_command', 'local_shell', 'unified_exec']);
 const PLAN_STATUS = { pending: 'pending', in_progress: 'in_progress', inProgress: 'in_progress', completed: 'completed' };
@@ -73,6 +73,48 @@ function toolCall(p) {
   return { name, input: args };
 }
 
+const camel = (k) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+
+/** File changes of a recorded item: v2 array, or the older { path: { add | delete | update } } map. */
+function recordedChanges(changes) {
+  if (Array.isArray(changes)) return changes.map((c) => ({ path: c.path, kind: c.kind ?? { type: 'update' }, diff: c.diff ?? c.unified_diff ?? '' }));
+  return Object.entries(changes ?? {}).map(([p, c]) => {
+    const type = c.type ?? Object.keys(c)[0] ?? 'update';
+    const body = c[type] ?? c;
+    const diff = body.unified_diff ?? body.diff ?? (typeof body.content === 'string' ? body.content.split('\n').map((l) => `+${l}`).join('\n') : '');
+    return { path: p, kind: { type, move_path: body.move_path ?? null }, diff };
+  });
+}
+
+/** An item as newer Codex versions record it (PascalCase type, snake_case fields) → a v2 thread item. */
+export function recordedItem(raw) {
+  const it = Object.fromEntries(Object.entries(raw).map(([k, v]) => [camel(k), v]));
+  const type = it.type.charAt(0).toLowerCase() + it.type.slice(1);
+  switch (type) {
+    case 'agentMessage':
+      return { ...it, type, text: it.text ?? (it.content ?? []).map((c) => c.text ?? '').join('') };
+    case 'reasoning':
+      return { ...it, type, summary: it.summary ?? it.summaryText ?? [], content: it.content ?? it.rawContent ?? [] };
+    case 'commandExecution':
+      return {
+        ...it,
+        type,
+        command: Array.isArray(it.command) ? it.command.join(' ') : it.command,
+        commandActions: it.commandActions ?? (it.parsedCmd ?? []).map((c) => ({ ...c, command: c.cmd ?? c.command })),
+        aggregatedOutput: it.aggregatedOutput ?? it.formattedOutput ?? [it.stdout, it.stderr].filter(Boolean).join('\n'),
+        exitCode: it.exitCode,
+      };
+    case 'dynamicToolCall':
+      return { ...it, type, contentItems: it.contentItems ?? [] };
+    case 'fileChange':
+      return { ...it, type, changes: recordedChanges(raw.changes) };
+    case 'mcpToolCall':
+      return { ...it, type, server: it.server ?? it.invocation?.server, tool: it.tool ?? it.invocation?.tool, arguments: it.arguments ?? it.invocation?.arguments };
+    default:
+      return { ...it, type };
+  }
+}
+
 /** Desk events of a rollout file; null when it can't be read. */
 export function rolloutEvents(file) {
   let text;
@@ -81,6 +123,8 @@ export function rolloutEvents(file) {
   } catch {
     return null;
   }
+  // Newer Codex records every finished item; older versions only the raw model items.
+  if (text.includes('"type":"item_completed"')) return recordedEvents(text);
   /** Turns as event lists, so rollbacks can drop the latest ones. */
   const turns = [];
   let cur = [];
@@ -199,6 +243,51 @@ export function rolloutEvents(file) {
         }
         break;
       }
+    }
+  }
+  open();
+  return turns.flat();
+}
+
+/** Rollouts with recorded items (newer Codex): the same items the live stream reports. */
+function recordedEvents(text) {
+  const turns = [];
+  let cur = [];
+  const open = () => {
+    if (cur.length) turns.push(cur);
+    cur = [];
+  };
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let rec;
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (rec.type !== 'event_msg') continue;
+    const p = rec.payload ?? {};
+    switch (p.type) {
+      case 'item_completed': {
+        if (!p.item?.type) break;
+        const item = recordedItem(p.item);
+        if (item.type === 'userMessage') {
+          open();
+          const { text: t, images } = userInputText(item.content);
+          cur.push({ type: 'user', text: t.trim(), images });
+        } else if (!(item.type === 'reasoning' && !item.summary?.length)) cur.push(...itemEvents(item, 'end'));
+        break;
+      }
+      case 'turn_aborted':
+        cur.push({ type: 'notice', code: 'reduce.interrupted', tone: 'warn', at: 'if-open' });
+        break;
+      case 'error':
+        cur.push({ type: 'notice', text: String(p.message ?? ''), tone: 'error', at: 'open' });
+        break;
+      case 'thread_rolled_back':
+        open();
+        turns.splice(Math.max(0, turns.length - (p.num_turns ?? 0)));
+        break;
     }
   }
   open();

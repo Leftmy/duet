@@ -728,6 +728,7 @@ export function Sidebar() {
     // Worktree chats are listed under the project they were branched from.
     const baseOf = (cwd: string) => worktrees[(cwd || '').toLowerCase()]?.base ?? cwd ?? '';
     const known = new Set(sessions.map((s) => s.sessionId));
+    const subSessions = new Set(settings.subSessions ?? []);
     for (const t of Object.values(threads)) {
       if (t.entries.length && (!t.sessionId || !known.has(t.sessionId))) {
         add(
@@ -743,6 +744,7 @@ export function Sidebar() {
       }
     }
     for (const s of sessions) {
+      if (subSessions.has(s.sessionId)) continue;
       const open = Object.values(threads).find((t) => t.sessionId === s.sessionId);
       add(
         {

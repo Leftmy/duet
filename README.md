@@ -1,8 +1,11 @@
 # Duet
 
-Desktop UI for Claude Code built on the Claude Agent SDK. It runs the regular
-Claude Code that is installed and signed in on this machine, so it uses your
-own Claude subscription. For personal use only.
+Desktop UI for coding agents. It runs the regular Claude Code (through the Claude
+Agent SDK) and OpenAI Codex (through `codex app-server`) that are installed and
+signed in on this machine, so it uses your own subscriptions. For personal use only.
+
+Codex is picked up from the npm CLI (`npm install -g @openai/codex`) or the Codex
+desktop app, whichever is newer; `DUET_CODEX_BIN` points to a specific binary.
 
 ## Run
 
@@ -40,6 +43,17 @@ npm run shortcut
 - Worktree mode: a chat runs in its own git worktree/branch; apply changes back with one click.
 - Settings window (Ctrl+,).
 
+### Several agents
+
+- Every chat talks to one agent (Claude or Codex); the agent picker in the composer
+  or `Ctrl+.` moves the chat to another one. The next message hands the new agent the
+  conversation it hasn't seen; switching back resumes that agent's own session, so it
+  only gets what happened while it was away. The chat stays one row in the sidebar.
+- Agents can work for each other: the `run_agent` tool (toolset `desk-agents`) lets
+  Claude hand a task to Codex and the other way round. The helper shows up as a
+  subagent of the chat (Agents panel), asks for approvals in the same chat and stops
+  with it.
+
 ## Layout
 
 - `electron/core/` — the provider-neutral core: `runs.mjs` maps chats to provider runs, brokers tool
@@ -47,13 +61,30 @@ npm run shortcut
   documents the provider contract.
 - `electron/providers/<id>/` — one module per agent. A provider starts runs, translates its native
   stream and saved sessions into desk events (`renderer/src/events.ts`) and lists its sessions.
-  `providers/claude` wraps the Agent SDK (one long-lived streaming query per chat).
+  `providers/claude` wraps the Agent SDK (one long-lived streaming query per chat), `providers/codex`
+  drives `codex app-server` over JSON-RPC (one process, a Codex thread per chat).
+- `electron/core/agents.mjs` — the `desk-agents` toolset (agents delegating to each other);
+  `renderer/src/lib/handoff.ts` — the context handed over when a chat switches agents.
 - `renderer/src/lib/reduce.ts` — folds desk events into the chat feed, the same way for live runs and history.
 - `electron/main.mjs` — window, IPC, settings (`%APPDATA%\Duet\settings.json`).
 - `renderer/src` — React UI (Zustand store, Motion animations).
 
+### Adding an agent
+
+1. `electron/providers/<id>/index.mjs` default-exports a factory returning a provider:
+   `open(spec, sink)` runs a session and reports desk events, approvals go through
+   `sink.approval`, plus `probe`, `listSessions`, `loadHistory` and the session ops.
+   The contract is documented in `electron/core/registry.mjs`; events in
+   `renderer/src/events.ts` (checked by `electron/core/events.mjs`).
+2. Desk toolsets (`spec.tools`) are plain definitions (`electron/core/tools.mjs`);
+   expose them the way the agent supports tools (MCP, client tools, …).
+3. `node scripts/provider-check.mjs <id>` runs it through the real core (streaming,
+   a command, an approval, a desk tool, resume, history) and validates every event.
+4. Register it in `electron/main.mjs`. The UI reads models, modes and capabilities
+   from the probe and `caps`; chats, switching and `run_agent` work with it as is.
+
 ## Shortcuts
 
 - `Enter` send, `Shift+Enter` new line, `Esc` stop the current turn
-- `Ctrl+N` new chat, `Ctrl+B` toggle sidebar, `Ctrl+Shift+I` DevTools
+- `Ctrl+N` new chat, `Ctrl+.` switch the chat to another agent, `Ctrl+B` toggle sidebar, `Ctrl+Shift+I` DevTools
 - `/` in an empty composer lists slash commands and skills

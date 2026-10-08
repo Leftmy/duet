@@ -15,6 +15,7 @@ import { createWorktrees } from './worktree.mjs';
 import { setLanguage, t } from './i18n.mjs';
 import { createBrowser } from './browser.mjs';
 import { sessionToolset } from './session-tools.mjs';
+import { agentsToolset } from './core/agents.mjs';
 import {
   gitBranches,
   gitCheckout,
@@ -162,8 +163,9 @@ const stats = createStats(app.getPath('userData'));
 const registry = createRegistry();
 registry.register(createClaudeProvider({ stats, log: (...a) => console.log('[claude]', ...a) }));
 registry.register(createCodexProvider({ log: (...a) => console.log('[codex]', ...a) }));
-// Tools the app gives every agent: session helpers and the chat's own browser page.
-const toolsFor = (key) => [sessionToolset(), browser.toolset(key)];
+// Tools the app gives every agent: session helpers, the chat's own browser page and the other agents
+// (one level of delegation, so agents don't keep handing work to each other).
+const toolsFor = (key, { depth = 0 } = {}) => [sessionToolset(), browser.toolset(key), ...(depth < 1 ? [agentsToolset(core, key)] : [])];
 const core = createCore({ emit, registry, browser, toolsFor, log: (...a) => console.log('[core]', ...a) });
 
 function createWindow() {

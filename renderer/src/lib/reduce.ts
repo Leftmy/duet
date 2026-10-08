@@ -2,7 +2,7 @@
 // every agent provider translates its own messages into DeskEvent (see ../events.ts).
 import type { AgentRun, BgTask, Entry, Item, ProviderId, Thread, Turn } from '../types';
 import type { DeskEvent } from '../events';
-import { subStepLabel } from './tools';
+import { DESK_AGENT_TOOL, subStepLabel } from './tools';
 import { uid } from './format';
 import { t as tr } from '../i18n';
 
@@ -164,6 +164,7 @@ function applyAgent(agents: Record<string, AgentRun>, ev: Extract<DeskEvent, { t
     ...(ev.background != null ? { background: ev.background } : {}),
     ...(ev.progress ? { progress: ev.progress } : {}),
     ...(ev.toolUses != null ? { toolUses: ev.toolUses } : {}),
+    ...(ev.sessionId ? { sessionId: ev.sessionId } : {}),
   };
   if (ev.prompt && ev.prompt !== base.prompt) {
     next.prompt = ev.prompt;
@@ -184,6 +185,35 @@ function editAgentItems(agent: AgentRun, now: number, fn: (ed: TurnEditor) => vo
 }
 
 const LABELS = { assignment: 'reduce.assignment', report: 'reduce.report', message: 'reduce.message' } as const;
+
+/** The answer text of a run_agent result (without its "run_id: …" header). */
+const deskAgentAnswer = (result: string) => result.replace(/^run_id: [^\n]*\nstatus: [^\n]*\n\n?/, '');
+
+/**
+ * A run_agent call describes the agent it starts, so saved chats (and the moment before the core's
+ * own record arrives) still show it as a subagent.
+ */
+function deskAgentFromTool(t: Thread, ev: DeskEvent, now: number, historical: boolean) {
+  if (ev.type === 'tool' && ev.name === DESK_AGENT_TOOL && ev.final && ev.input?.task) {
+    const task = String(ev.input.task);
+    const cur = t.agents[ev.id];
+    t.agents = applyAgent(
+      t.agents,
+      {
+        type: 'agent',
+        id: ev.id,
+        ...(cur ? {} : { name: task.split('\n')[0].slice(0, 80) }),
+        prompt: task,
+        provider: ev.input.agent,
+        background: Boolean(ev.input.background),
+      },
+      now,
+      historical,
+    );
+  } else if (ev.type === 'tool.result' && historical && t.agents[ev.id]?.status === 'running') {
+    t.agents = applyAgent(t.agents, { type: 'agent', id: ev.id, status: ev.status === 'error' ? 'error' : 'done', result: deskAgentAnswer(ev.result) }, now, historical);
+  }
+}
 
 /** Events that belong to a subagent's own transcript (ev.agent set) or to agent records. */
 function applyAgentEvent(agents: Record<string, AgentRun>, ev: DeskEvent, now: number, historical: boolean): Record<string, AgentRun> | null {
@@ -333,6 +363,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
     case 'tool.output':
     case 'tool.result':
       applyContent(ed, ev, now);
+      deskAgentFromTool(t, ev, now, historical);
       break;
     case 'tool.sub': {
       const turn = ed.peek();

@@ -35,6 +35,8 @@ function statusText(a: AgentRun) {
 export const AgentRow = memo(function AgentRow({ item }: { item: ToolItem }) {
   const agent = useAgent(item.id);
   const openAgent = useStore((s) => s.openAgent);
+  // Another agent working for this one (run_agent) is labelled with its own name.
+  const provider = useStore((s) => (agent?.provider ? s.providers[agent.provider]?.label ?? agent.provider : null));
   const running = agent ? agent.status === 'running' : item.status === 'running';
   const now = useNow(running);
   const steps = agent?.toolUses || item.subSteps;
@@ -61,7 +63,7 @@ export const AgentRow = memo(function AgentRow({ item }: { item: ToolItem }) {
       <button className="step-row agent-row" onClick={() => openAgent(item.id)} title={t('agents.openConversation')}>
         <Sparkles size={14} className="step-icon" style={{ color: agentColor(agent), opacity: 1 }} />
         <span className="step-text">
-          <span className="muted">{t('agents.agentPrefix')} </span>
+          <span className="muted">{provider ?? t('agents.agentPrefix')} </span>
           <AgentName agent={agent ?? ({ name: item.input?.name || item.input?.description, color: 0 } as AgentRun)} />
           <span className={running ? 'shimmer' : 'muted'}> {agent ? statusText(agent) : running ? t('agents.running') : t('agents.done')}</span>
         </span>

@@ -128,6 +128,8 @@ export interface AgentRun {
   model?: string;
   /** Set when the subagent is another agent than the chat's own (e.g. Codex working for Claude). */
   provider?: ProviderId;
+  /** That agent's own session (desk-agents subagents run as sessions of their agent). */
+  sessionId?: string;
   prompt: string;
   color: number;
   status: 'running' | 'done' | 'error' | 'stopped';

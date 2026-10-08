@@ -114,7 +114,9 @@ const sdkServers = (toolsets = []) =>
         name: set.name,
         version: '1.0.0',
         ...(set.instructions ? { instructions: set.instructions } : {}),
-        tools: set.tools.map((t) => tool(t.name, t.description, t.schema, (args, extra) => runTool(t, args, { signal: extra?.signal }))),
+        tools: set.tools.map((t) =>
+          tool(t.name, t.description, t.schema, (args, extra) => runTool(t, args, { signal: extra?.signal, toolUseId: extra?._meta?.['claudecode/toolUseId'] })),
+        ),
       }),
     ]),
   );
@@ -484,3 +486,5 @@ export function createClaudeProvider({ stats, log = () => {} }) {
     },
   };
 }
+
+export default createClaudeProvider;

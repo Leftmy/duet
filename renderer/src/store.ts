@@ -32,6 +32,8 @@ interface Settings {
   providerModels: Partial<Record<ProviderId, { model: string; effort: Effort }>>;
   /** Chats that moved between agents: session id → the session it continues (another agent's). */
   links: Record<string, string>;
+  /** Sessions of agents that worked for another chat (run_agent); shown under that chat, not as chats. */
+  subSessions: string[];
   model: string;
   effort: Effort;
   permissionMode: PermMode;
@@ -173,6 +175,7 @@ const DEFAULT_SETTINGS: Settings = {
   provider: 'claude',
   providerModels: {},
   links: {},
+  subSessions: [],
   model: 'default',
   effort: 'high',
   permissionMode: 'default',
@@ -487,7 +490,7 @@ export const useStore = create<State>()((set, get) => {
 
       window.desk.onEvent(({ threadId, ev }) => {
         if (ev.type === 'limits') {
-          const provider = get().threads[threadId]?.provider ?? 'claude';
+          const provider = ev.provider ?? get().threads[threadId]?.provider ?? 'claude';
           const patch = usageFromLimits(ev);
           const merge = (u: UsageSummary = {}) => ({ ...u, ...(patch.session ? { session: patch.session } : {}), ...(patch.weekly ? { weekly: patch.weekly } : {}) });
           set((s) => ({
@@ -501,6 +504,9 @@ export const useStore = create<State>()((set, get) => {
         if (!t) return;
         set((s) => ({ threads: { ...s.threads, [threadId]: applyEvent(s.threads[threadId], ev) } }));
         if (ev.type === 'session' && ev.sessionId !== t.sessionId) onNewSession(threadId, t, ev.sessionId);
+        if (ev.type === 'agent' && ev.sessionId && !get().settings.subSessions.includes(ev.sessionId)) {
+          persist({ subSessions: [ev.sessionId, ...get().settings.subSessions].slice(0, 1000) });
+        }
         if (ev.type === 'turn.end') onResult(threadId);
         if (ev.type === 'task' && ev.op === 'end') {
           const task = get().threads[threadId]?.tasks[ev.id];

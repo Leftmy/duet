@@ -18,6 +18,9 @@ export type ToolKind =
   | 'mcp'
   | 'other';
 
+/** The run_agent tool of the desk-agents toolset: another agent working for this chat's agent. */
+export const DESK_AGENT_TOOL = 'mcp__desk-agents__run_agent';
+
 export function toolKind(name: string): ToolKind {
   if (name === 'Bash' || name === 'PowerShell' || name === 'BashOutput' || name === 'KillShell') return 'shell';
   if (name === 'Read' || name === 'LS') return 'read';
@@ -25,7 +28,7 @@ export function toolKind(name: string): ToolKind {
   if (name === 'Write') return 'write';
   if (name === 'Grep' || name === 'Glob' || name === 'ToolSearch') return 'search';
   if (name === 'WebSearch' || name === 'WebFetch') return 'web';
-  if (name === 'Task' || name === 'Agent' || name === 'mcp__desk-agents__agent_run') return 'agent';
+  if (name === 'Task' || name === 'Agent' || name === DESK_AGENT_TOOL) return 'agent';
   if (name === 'TodoWrite') return 'todo';
   if (name === 'AskUserQuestion') return 'question';
   if (name === 'ExitPlanMode' || name === 'EnterPlanMode') return 'plan';

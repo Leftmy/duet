@@ -5,9 +5,16 @@ import { randomUUID } from 'node:crypto';
 import { t as tr } from '../i18n.mjs';
 
 /**
- * toolsFor(key) → desk toolsets (core/tools.mjs) a run gets; key is the thread id (it scopes per-chat
- * state such as the browser page).
+ * toolsFor(key, { depth }) → desk toolsets (core/tools.mjs) a run gets; key is the thread id (it scopes
+ * per-chat state such as the browser page), depth is 0 for chats and grows for agents they start.
  */
+
+/** Permission modes from least to most autonomous; a subagent never gets more than its parent. */
+const MODE_ORDER = ['plan', 'default', 'acceptEdits', 'auto', 'bypassPermissions'];
+const atMost = (mode, cap) => (MODE_ORDER.indexOf(mode) <= MODE_ORDER.indexOf(cap) ? mode : cap);
+
+/** Events of a subagent that belong in its parent's feed (as the subagent's own transcript). */
+const SUBAGENT_EVENTS = new Set(['text', 'thinking', 'tool', 'tool.delta', 'tool.output', 'tool.result']);
 export function createCore({ emit, registry, browser, toolsFor = () => [], log = () => {} }) {
   const threads = new Map();
   // Main-process listeners of one thread's events (e.g. the Telegram bot following a chat it started).
@@ -71,16 +78,23 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
         resume: t.resume,
         resumeAt: t.resume ? t.resumeAt : undefined,
         instructions: c.instructions,
-        tools: toolsFor(t.id),
+        tools: toolsFor(t.id, { depth: t.depth ?? 0 }),
       },
       {
         event(ev) {
           if (t.run !== run) return;
           if (ev.type === 'session') t.sessionId = ev.sessionId;
           if (ev.type === 'turn.end') t.running = false;
+          // Plan limits are per agent; say whose they are.
+          if (ev.type === 'limits') ev = { ...ev, provider: t.provider };
+          if (t.sub) return subagentEvent(t, ev);
           out('agent:event', { threadId: t.id, ev });
         },
-        approval: (req) => askPermission(t, req),
+        // A subagent asks in its parent's chat.
+        approval: (req) =>
+          t.sub
+            ? askPermission(thread(t.sub.parentId), { ...req, agentID: t.sub.toolUseId, displayName: `${providerOf(t).label}: ${req.displayName ?? req.toolName}` })
+            : askPermission(t, req),
         closed({ error, stderr } = {}) {
           if (t.run === run) {
             t.run = null;
@@ -89,6 +103,7 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
           for (const p of [...t.pending.values()]) p.resolve({ decision: 'deny', message: 'Session closed' });
           t.pending.clear();
           t.running = false;
+          if (t.sub) return finishSubagent(t, error ? 'error' : 'stopped', error ? String(error) : t.sub.text);
           out('agent:closed', { threadId: t.id, error: error ?? null, stderr });
         },
       },
@@ -105,6 +120,35 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
     t.run = null;
     run?.close();
   }
+
+  // ---------- subagents: runs started by another run's run_agent tool ----------
+
+  /** Sends one of a subagent's events to its parent chat. */
+  const toParent = (t, ev) => out('agent:event', { threadId: t.sub.parentId, ev });
+
+  function subagentEvent(t, ev) {
+    const s = t.sub;
+    if (SUBAGENT_EVENTS.has(ev.type)) {
+      toParent(t, { ...ev, agent: s.toolUseId });
+      if (ev.type === 'tool' && ev.final) toParent(t, { type: 'tool.sub', id: s.toolUseId, name: ev.name, input: ev.input });
+    } else if (ev.type === 'turn.end') {
+      finishSubagent(t, ev.isError ? 'error' : 'done', ev.isError ? ev.error || ev.text || '' : ev.text ?? '');
+    } else if (ev.type === 'limits') toParent(t, ev);
+    // The subagent's own session: the UI keeps it out of the chat list.
+    else if (ev.type === 'session') toParent(t, { type: 'agent', id: s.toolUseId, sessionId: ev.sessionId });
+  }
+
+  function finishSubagent(t, status, text) {
+    const s = t.sub;
+    if (s.status !== 'running') return;
+    s.status = status;
+    s.text = text;
+    toParent(t, { type: 'agent', id: s.toolUseId, status, result: text });
+    for (const w of s.waiters.splice(0)) w();
+  }
+
+  /** Subagents a thread started, for cascading stops. */
+  const childrenOf = (id) => [...threads.values()].filter((x) => x.sub?.parentId === id);
 
   const liveRun = (threadId) => {
     const t = threads.get(threadId);
@@ -265,6 +309,78 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
 
     async interrupt(threadId) {
       await threads.get(threadId)?.run?.interrupt();
+      // Stopping a chat stops the agents it handed work to.
+      for (const c of childrenOf(threadId)) if (c.sub.status === 'running') core.stopAgent(c.id);
+      return true;
+    },
+
+    /**
+     * Starts another agent on a task for a running chat (the run_agent tool). Its steps appear as a
+     * subagent of the tool call toolUseId; returns { runId } at once — wait with waitAgent.
+     */
+    spawnAgent({ parentId, toolUseId, provider, prompt, model, readOnly, background }) {
+      const parent = threads.get(parentId);
+      const pc = parent?.config ?? {};
+      const id = `sub-${randomUUID()}`;
+      const t = thread(id, provider);
+      const p = providerOf(t);
+      t.depth = (parent?.depth ?? 0) + 1;
+      t.sub = { parentId, toolUseId: toolUseId || id, status: 'running', text: '', waiters: [] };
+      const mode = readOnly ? 'plan' : atMost(pc.permissionMode || 'default', 'bypassPermissions');
+      t.config = { cwd: pc.cwd, dirs: pc.dirs, model, permissionMode: p.caps.modes?.includes(mode) ? mode : 'default' };
+      toParent(t, {
+        type: 'agent',
+        id: t.sub.toolUseId,
+        name: prompt.split('\n')[0].slice(0, 80),
+        prompt,
+        provider,
+        ...(model ? { model } : {}),
+        background: Boolean(background),
+      });
+      start(t);
+      t.run.send({ text: prompt });
+      t.running = true;
+      return { runId: id };
+    },
+
+    /** Resolves once the subagent's current turn ends: { runId, status, text }. */
+    waitAgent(runId, { signal, timeoutMs = 60 * 60000 } = {}) {
+      const t = threads.get(runId);
+      if (!t?.sub) return Promise.resolve({ runId, status: 'error', text: `Unknown run_id ${runId}` });
+      const s = t.sub;
+      const result = () => ({ runId, status: s.status, text: s.text });
+      if (s.status !== 'running') return Promise.resolve(result());
+      return new Promise((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          resolve(s.status === 'running' ? { runId, status: 'running', text: 'Still working — wait again later.' } : result());
+        };
+        const timer = setTimeout(done, timeoutMs);
+        s.waiters.push(done);
+        // The calling tool was cancelled (the parent turn stopped): stop the subagent with it.
+        signal?.addEventListener('abort', () => core.stopAgent(runId), { once: true });
+      });
+    },
+
+    /** A follow-up message to a subagent; resolves with its answer. */
+    messageAgent(runId, text, opts) {
+      const t = threads.get(runId);
+      if (!t?.sub) return Promise.resolve({ runId, status: 'error', text: `Unknown run_id ${runId}` });
+      if (t.sub.status === 'running') return Promise.resolve({ runId, status: 'running', text: 'Still working on the previous task — use wait_agent first.' });
+      t.sub.status = 'running';
+      toParent(t, { type: 'agent', id: t.sub.toolUseId, status: 'running' });
+      toParent(t, { type: 'agent.msg', agent: t.sub.toolUseId, dir: 'to', text, label: 'message' });
+      if (!t.run) start(t);
+      t.run.send({ text });
+      t.running = true;
+      return core.waitAgent(runId, opts);
+    },
+
+    stopAgent(runId) {
+      const t = threads.get(runId);
+      if (!t?.sub) return false;
+      if (t.sub.status === 'running') finishSubagent(t, 'stopped', t.sub.text || 'Stopped.');
+      stop(t);
       return true;
     },
 
@@ -296,6 +412,10 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
       browser?.dispose(threadId);
       const t = threads.get(threadId);
       if (!t) return;
+      for (const c of childrenOf(threadId)) {
+        core.stopAgent(c.id);
+        threads.delete(c.id);
+      }
       stop(t);
       threads.delete(threadId);
     },

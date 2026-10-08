@@ -51,6 +51,8 @@ export type DeskEvent =
       result?: string;
       progress?: string;
       toolUses?: number;
+      /** Session of a subagent that is another agent's own run (desk-agents). */
+      sessionId?: string;
     }
   /** A message between the lead and a subagent; dedupe skips texts the agent already has. */
   | { type: 'agent.msg'; agent: string; id?: string; dir: 'to' | 'from'; text: string; label: 'assignment' | 'report' | 'message'; dedupe?: boolean }
@@ -59,6 +61,6 @@ export type DeskEvent =
   /** The tool call never became an agent (rejected input). */
   | { type: 'agent.drop'; id: string }
   | { type: 'turn.end'; durationMs?: number; isError?: boolean; error?: string; text?: string; costUsd?: number }
-  | { type: 'limits'; session?: LimitWindow; weekly?: LimitWindow; rejected?: boolean }
+  | { type: 'limits'; provider?: ProviderId; session?: LimitWindow; weekly?: LimitWindow; rejected?: boolean }
   /** Live context-window occupancy, for providers that report it with the stream. */
   | { type: 'context'; usage: ContextUsage };
