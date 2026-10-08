@@ -13,8 +13,10 @@ import type {
   Thread,
   WorktreeInfo,
   UsageSummary,
+  ProviderId,
 } from './types';
-import { agentsFromEntries, applySdkMessage, applySubagentMessage, entriesFromHistory, newRuntime, type Runtime } from './lib/reduce';
+import type { ProviderProbe } from './desk';
+import { applyAgentTranscripts, applyEvent, fromHistory } from './lib/reduce';
 import { basename, normalizePct, uid } from './lib/format';
 import { askConfirm } from './lib/dialog';
 import { setLang, t as tr, type Lang } from './i18n';
@@ -23,6 +25,8 @@ import { isDetachedWindow } from './features/detach/mode';
 interface Settings {
   language: Lang;
   theme: ThemePref;
+  /** Agent of new chats. */
+  provider: ProviderId;
   model: string;
   effort: Effort;
   permissionMode: PermMode;
@@ -65,6 +69,8 @@ interface State {
   ready: boolean;
   probeError?: string;
   account: Account;
+  /** Every registered agent provider: availability, models, capabilities. */
+  providers: Record<string, ProviderProbe>;
   models: ModelInfo[];
   commands: SlashCommand[];
   mcp: { name: string; status: string; scope?: string; tools: number }[];
@@ -152,16 +158,10 @@ interface State {
   forkFrom(id: string, uuid?: string): Promise<void>;
 }
 
-const runtimes = new Map<string, Runtime>();
-const rt = (id: string) => {
-  let r = runtimes.get(id);
-  if (!r) runtimes.set(id, (r = newRuntime()));
-  return r;
-};
-
 const DEFAULT_SETTINGS: Settings = {
   language: 'en',
   theme: 'system',
+  provider: 'claude',
   model: 'default',
   effort: 'high',
   permissionMode: 'default',
@@ -205,6 +205,7 @@ function blankThread(s: Settings, cwd?: string, projectId?: string): Thread {
   const d = project?.defaults ?? {};
   return {
     id: 'new-' + uid(),
+    provider: d.provider ?? s.provider ?? 'claude',
     title: tr('common.newChat'),
     cwd: cwd ?? project?.folders[0] ?? s.cwd,
     ...(project ? { projectId: project.id } : {}),
@@ -243,10 +244,10 @@ export const useStore = create<State>()((set, get) => {
     const t = get().threads[id];
     if (!t?.sessionId || t.chainExpanded || (t.chainLoaded ?? 0) > 0) return;
     const files: SessionInfo[] = [
-      { sessionId: t.sessionId, title: t.title, cwd: t.cwd, lastModified: Date.now() },
+      { sessionId: t.sessionId, provider: t.provider, title: t.title, cwd: t.cwd, lastModified: Date.now() },
       ...(t.chain ?? []).filter((p) => p.segment == null),
     ];
-    const lists = await Promise.all(files.map((f) => window.desk.segments(f.sessionId, f.cwd).catch(() => [])));
+    const lists = await Promise.all(files.map((f) => window.desk.segments(f.sessionId, f.cwd, f.provider).catch(() => [])));
     const chain: SessionInfo[] = [];
     files.forEach((f, i) => {
       if (i > 0) chain.push(f);
@@ -314,6 +315,7 @@ export const useStore = create<State>()((set, get) => {
         : projectOf(get().settings, t.sessionId, t.worktree?.base ?? t.cwd);
       await window.desk.send({
         threadId: id,
+        provider: t.provider,
         cwd,
         dirs: project?.folders.filter((f) => !sameDir(f, cwd)),
         model: t.model,
@@ -345,7 +347,7 @@ export const useStore = create<State>()((set, get) => {
     if (get().settings.autoTitles && !t.autoTitled && t.sessionId && users.length === 1 && users[0].kind === 'user' && users[0].text) {
       update(id, (x) => ({ ...x, autoTitled: true }));
       window.desk
-        .autoTitle({ sessionId: t.sessionId, cwd: t.cwd, text: users[0].text })
+        .autoTitle({ sessionId: t.sessionId, cwd: t.cwd, text: users[0].text, provider: t.provider })
         .then((title) => {
           if (!title) return;
           update(id, (x) => ({ ...x, title }));
@@ -355,7 +357,7 @@ export const useStore = create<State>()((set, get) => {
     }
     if (get().settings.notifications && (document.hidden || get().activeId !== id)) {
       try {
-        new Notification('Claude', { body: tr('store.notifyDone', { title: t.title }), silent: false });
+        new Notification(get().providers[t.provider]?.label ?? 'Duet', { body: tr('store.notifyDone', { title: t.title }), silent: false });
       } catch {}
     }
     if (t.queue.length) {
@@ -368,6 +370,7 @@ export const useStore = create<State>()((set, get) => {
   return {
     ready: false,
     account: {},
+    providers: {},
     models: [],
     commands: [],
     mcp: [],
@@ -402,25 +405,22 @@ export const useStore = create<State>()((set, get) => {
       const first = blankThread(settings);
       set({ settings, threads: { [first.id]: first }, activeId: first.id });
 
-      window.desk.onEvent(({ threadId, msg }) => {
-        if (msg.type === 'rate_limit_event') {
-          const info = msg.rate_limit_info ?? {};
-          const win = { pct: normalizePct(info.utilization), resetsAt: info.resetsAt };
-          if (info.utilization != null) {
-            if (info.rateLimitType === 'five_hour') set((s) => ({ usage: { ...s.usage, session: win } }));
-            if (info.rateLimitType === 'seven_day') set((s) => ({ usage: { ...s.usage, weekly: win } }));
-          }
-          if (info.status === 'rejected') get().toast(tr('store.limitReached'), 'error');
+      window.desk.onEvent(({ threadId, ev }) => {
+        if (ev.type === 'limits') {
+          const win = (w?: { pct: number; resetsAt?: any }) => (w ? { pct: normalizePct(w.pct), resetsAt: w.resetsAt } : undefined);
+          if (ev.session) set((s) => ({ usage: { ...s.usage, session: win(ev.session) } }));
+          if (ev.weekly) set((s) => ({ usage: { ...s.usage, weekly: win(ev.weekly) } }));
+          if (ev.rejected) get().toast(tr('store.limitReached'), 'error');
           return;
         }
         const t = get().threads[threadId];
         if (!t) return;
-        set((s) => ({ threads: { ...s.threads, [threadId]: applySdkMessage(s.threads[threadId], msg, rt(threadId)) } }));
-        if (msg.type === 'result') onResult(threadId);
-        if (msg.type === 'system' && msg.subtype === 'task_notification') {
-          const task = get().threads[threadId]?.tasks[msg.task_id];
+        set((s) => ({ threads: { ...s.threads, [threadId]: applyEvent(s.threads[threadId], ev) } }));
+        if (ev.type === 'turn.end') onResult(threadId);
+        if (ev.type === 'task' && ev.op === 'end') {
+          const task = get().threads[threadId]?.tasks[ev.id];
           if (task?.background) {
-            const ok = msg.status === 'completed';
+            const ok = ev.status === 'completed';
             get().toast(tr(ok ? 'store.taskDone' : 'store.taskStopped', { name: task.description }), ok ? 'info' : 'error');
             if (document.hidden && get().settings.notifications) {
               try {
@@ -461,7 +461,6 @@ export const useStore = create<State>()((set, get) => {
           );
           return { ...t, entries, tasks, agents, status: 'idle', approvals: [], activity: undefined, stopRequested: false };
         });
-        runtimes.delete(threadId);
         if (error && get().threads[threadId]) get().toast(tr('store.sessionAborted', { error }), 'error');
       });
 
@@ -471,6 +470,7 @@ export const useStore = create<State>()((set, get) => {
           threadId: string;
           prompt: string;
           cwd?: string;
+          provider?: ProviderId;
           model?: string;
           effort?: Effort;
           permissionMode?: PermMode;
@@ -492,7 +492,7 @@ export const useStore = create<State>()((set, get) => {
           if (!thread) {
             s = get();
             const blank = blankThread(s.settings, r.cwd, r.projectId);
-            thread = { ...blank, id: r.threadId };
+            thread = { ...blank, id: r.threadId, ...(r.provider ? { provider: r.provider } : {}) };
             set({ threads: { ...s.threads, [thread.id]: thread } });
           }
           const id = thread.id;
@@ -512,10 +512,7 @@ export const useStore = create<State>()((set, get) => {
           const gone = Object.values(s.threads).filter((t) => t.id === threadId || (sessionId && t.sessionId === sessionId));
           const threads = { ...s.threads };
           // Only drop it from this window; the session itself lives on in the detached one.
-          for (const t of gone) {
-            delete threads[t.id];
-            runtimes.delete(t.id);
-          }
+          for (const t of gone) delete threads[t.id];
           const key = sessionId ?? threadId;
           set({
             threads,
@@ -542,6 +539,7 @@ export const useStore = create<State>()((set, get) => {
         const p = await window.desk.probe();
         set({
           ready: true,
+          providers: p.providers ?? {},
           models: p.models,
           account: p.account ?? {},
           commands: p.commands ?? [],
@@ -586,6 +584,7 @@ export const useStore = create<State>()((set, get) => {
       }
       const t: Thread = {
         ...blankThread(s.settings, info.cwd),
+        provider: info.provider ?? 'claude',
         id: info.sessionId,
         sessionId: info.sessionId,
         title: info.title,
@@ -596,10 +595,10 @@ export const useStore = create<State>()((set, get) => {
       };
       set({ threads: { ...s.threads, [t.id]: t }, activeId: t.id });
       window.desk
-        .loadSession(info.sessionId, info.cwd)
-        .then((msgs) => {
-          const entries = entriesFromHistory(msgs);
-          update(t.id, (x) => ({ ...x, entries, agents: agentsFromEntries(entries), loaded: true, loading: false }));
+        .loadSession(info.sessionId, info.cwd, undefined, t.provider)
+        .then((events) => {
+          const { entries, agents } = fromHistory(events);
+          update(t.id, (x) => ({ ...x, entries, agents, loaded: true, loading: false }));
           expandChain(t.id);
         })
         .catch((e) => {
@@ -616,12 +615,12 @@ export const useStore = create<State>()((set, get) => {
         const start = t.chainLoaded ?? 0;
         const parts = all ? t.chain.slice(start) : [t.chain[start]];
         // Older parts first, so the conversation reads top to bottom.
-        const loaded = await Promise.all(parts.map((p) => window.desk.loadSession(p.sessionId, p.cwd, p.segment)));
-        const earlier = loaded.reverse().flatMap((msgs) => entriesFromHistory(msgs));
+        const loaded = await Promise.all(parts.map((p) => window.desk.loadSession(p.sessionId, p.cwd, p.segment, p.provider)));
+        const earlier = loaded.reverse().map((events) => fromHistory(events));
         update(id, (x) => ({
           ...x,
-          entries: [...earlier, ...x.entries],
-          agents: { ...agentsFromEntries(earlier), ...x.agents },
+          entries: [...earlier.flatMap((h) => h.entries), ...x.entries],
+          agents: { ...Object.assign({}, ...earlier.map((h) => h.agents)), ...x.agents },
           chainLoaded: start + parts.length,
           loading: false,
         }));
@@ -672,7 +671,7 @@ export const useStore = create<State>()((set, get) => {
             return { ...x, entries };
           });
           window.desk
-            .send({ threadId: id, cwd: t.cwd, model: t.model, effort: effortFor(t), permissionMode: t.permissionMode, resume: t.sessionId, text, images, uuid, priority: 'next' })
+            .send({ threadId: id, provider: t.provider, cwd: t.cwd, model: t.model, effort: effortFor(t), permissionMode: t.permissionMode, resume: t.sessionId, text, images, uuid, priority: 'next' })
             .catch((e: any) => get().toast(tr('store.sendFailed', { error: e?.message ?? e }), 'error'));
           return;
         }
@@ -810,7 +809,7 @@ export const useStore = create<State>()((set, get) => {
       update(id, (x) => ({ ...x, title: title.trim() }));
       if (t.sessionId) {
         window.desk
-          .renameSession(t.sessionId, title.trim(), t.cwd)
+          .renameSession(t.sessionId, title.trim(), t.cwd, t.provider)
           .then(() => get().refreshSessions())
           .catch((e) => get().toast(String(e?.message ?? e), 'error'));
       }
@@ -823,11 +822,10 @@ export const useStore = create<State>()((set, get) => {
       window.desk.closeThread(id);
       const threads = { ...s.threads };
       delete threads[id];
-      runtimes.delete(id);
       set({ threads, sessions: s.sessions.filter((x) => x.sessionId !== t.sessionId) });
       if (s.activeId === id) get().newThread(t.cwd);
       if (t.sessionId) {
-        window.desk.deleteSession(t.sessionId, t.cwd).catch((e) => get().toast(String(e?.message ?? e), 'error'));
+        window.desk.deleteSession(t.sessionId, t.cwd, t.provider).catch((e) => get().toast(String(e?.message ?? e), 'error'));
       }
     },
 
@@ -910,7 +908,7 @@ export const useStore = create<State>()((set, get) => {
       const entry = t.entries[idx];
       if (!entry || entry.kind !== 'user') return;
       const prevTurn = [...t.entries.slice(0, idx)].reverse().find((e) => e.kind === 'turn');
-      const config = { cwd: t.cwd, model: t.model, effort: effortFor(t), permissionMode: t.permissionMode, resume: t.sessionId };
+      const config = { provider: t.provider, cwd: t.cwd, model: t.model, effort: effortFor(t), permissionMode: t.permissionMode, resume: t.sessionId };
       const done: string[] = [];
       try {
         if (t.status === 'running') {
@@ -948,10 +946,11 @@ export const useStore = create<State>()((set, get) => {
       const t = get().threads[id];
       if (!t?.sessionId) return;
       try {
-        const sessionId = await window.desk.fork({ sessionId: t.sessionId, cwd: t.cwd, uuid });
+        const sessionId = await window.desk.fork({ sessionId: t.sessionId, cwd: t.cwd, uuid, provider: t.provider });
         await get().refreshSessions();
         const info = get().sessions.find((s) => s.sessionId === sessionId) ?? {
           sessionId,
+          provider: t.provider,
           title: `${t.title} (${tr('store.forkWord')})`,
           cwd: t.cwd,
           lastModified: Date.now(),
@@ -1032,14 +1031,8 @@ export const useStore = create<State>()((set, get) => {
       if (!t?.sessionId) return;
       update(id, (x) => ({ ...x, agents: Object.fromEntries(Object.entries(x.agents).map(([k, a]) => [k, { ...a, transcriptLoaded: true }])) }));
       window.desk
-        .loadSubagents(t.sessionId, t.cwd)
-        .then((msgs) =>
-          update(id, (x) => {
-            let agents = x.agents;
-            for (const m of msgs) if (m.parent_tool_use_id && agents[m.parent_tool_use_id]) agents = applySubagentMessage(agents, m, 0);
-            return { ...x, agents };
-          }),
-        )
+        .loadSubagents(t.sessionId, t.cwd, t.provider)
+        .then((events) => update(id, (x) => ({ ...x, agents: applyAgentTranscripts(x.agents, events) })))
         .catch((e) => get().toast(tr('store.agentsFailed', { error: e?.message ?? e }), 'error'));
     },
 

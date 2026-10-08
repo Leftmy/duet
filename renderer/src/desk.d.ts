@@ -1,9 +1,11 @@
-import type { BrowserState, WorktreeInfo, ContextUsage, Effort, GitStatus, ImageAttachment, PermMode, SessionInfo } from './types';
+import type { BrowserState, WorktreeInfo, ContextUsage, Effort, GitStatus, ImageAttachment, PermMode, ProviderId, SessionInfo } from './types';
+import type { DeskEvent } from './events';
 
 type Unsubscribe = () => void;
 
 interface SendPayload {
   threadId: string;
+  provider?: ProviderId;
   cwd: string;
   model: string;
   effort?: Effort;
@@ -16,6 +18,21 @@ interface SendPayload {
   /** Extra folders Claude may read and edit (project folders besides cwd). */
   dirs?: string[];
   priority?: 'now' | 'next' | 'later';
+  /** Extra system instructions for a run that starts with this message (context handed over from another agent). */
+  instructions?: string;
+}
+
+/** What a provider reports about itself (agent:probe → providers[id]). */
+export interface ProviderProbe {
+  available: boolean;
+  error?: string;
+  label: string;
+  version?: string;
+  models: any[];
+  account?: any;
+  commands?: any[];
+  usage?: any;
+  caps: Record<string, any>;
 }
 
 declare global {
@@ -26,14 +43,14 @@ declare global {
       /** Feature modules: invoke a namespaced channel (pr:, search:, sched:, voice:, instr:). */
       call<T = any>(channel: string, ...args: any[]): Promise<T>;
       subscribe<T = any>(channel: string, cb: (payload: T) => void): Unsubscribe;
-      probe(force?: boolean): Promise<{ models: any[]; account: any; commands: any[]; usage: any }>;
-      usage(): Promise<any>;
+      probe(force?: boolean): Promise<{ models: any[]; account: any; commands: any[]; usage: any; providers: Record<string, ProviderProbe> }>;
+      usage(provider?: ProviderId): Promise<any>;
       listSessions(): Promise<SessionInfo[]>;
-      loadSession(sessionId: string, cwd?: string, segment?: number): Promise<any[]>;
+      loadSession(sessionId: string, cwd?: string, segment?: number, provider?: ProviderId): Promise<DeskEvent[]>;
       /** Earlier parts of a session file (before in-file compactions), newest first. */
-      segments(sessionId: string, cwd?: string): Promise<{ segment: number; count: number; ts: string }[]>;
-      renameSession(sessionId: string, title: string, cwd?: string): Promise<void>;
-      deleteSession(sessionId: string, cwd?: string): Promise<void>;
+      segments(sessionId: string, cwd?: string, provider?: ProviderId): Promise<{ segment: number; count: number; ts: string }[]>;
+      renameSession(sessionId: string, title: string, cwd?: string, provider?: ProviderId): Promise<void>;
+      deleteSession(sessionId: string, cwd?: string, provider?: ProviderId): Promise<void>;
       send(payload: SendPayload): Promise<boolean>;
       configure(payload: { threadId: string; model?: string; effort?: Effort; permissionMode?: PermMode }): Promise<boolean>;
       interrupt(threadId: string): Promise<boolean>;
@@ -45,10 +62,10 @@ declare global {
         message?: string;
       }): Promise<boolean>;
       closeThread(threadId: string): Promise<void>;
-      autoTitle(payload: { sessionId: string; cwd: string; text: string }): Promise<string | null>;
+      autoTitle(payload: { sessionId: string; cwd: string; text: string; provider?: ProviderId }): Promise<string | null>;
       openTargets(): Promise<{ id: string; label: string }[]>;
       stopTask(threadId: string, taskId: string): Promise<boolean>;
-      loadSubagents(sessionId: string, cwd?: string): Promise<any[]>;
+      loadSubagents(sessionId: string, cwd?: string, provider?: ProviderId): Promise<DeskEvent[]>;
       contextUsage(threadId: string): Promise<ContextUsage | null>;
       browserSetBounds(b: { x: number; y: number; width: number; height: number }): Promise<void>;
       browserSetVisible(v: boolean, key?: string): Promise<void>;
@@ -87,9 +104,9 @@ declare global {
         threadId: string;
         uuid: string;
         dryRun?: boolean;
-        config: { cwd: string; model: string; effort?: Effort; permissionMode: PermMode; resume?: string };
+        config: { provider?: ProviderId; cwd: string; model: string; effort?: Effort; permissionMode: PermMode; resume?: string };
       }): Promise<{ canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number }>;
-      fork(payload: { sessionId: string; cwd?: string; uuid?: string }): Promise<string>;
+      fork(payload: { sessionId: string; cwd?: string; uuid?: string; provider?: ProviderId }): Promise<string>;
       rewindConversation(payload: { threadId: string; resumeAt: string | null }): Promise<boolean>;
       backgroundTask(threadId: string, toolUseId: string): Promise<boolean>;
       taskOutput(file: string): Promise<{ text: string; truncated: boolean } | null>;
@@ -112,7 +129,7 @@ declare global {
       showInFolder(p: string): Promise<void>;
       gitBranch(cwd: string): Promise<string | null>;
       pathExists(p: string): Promise<boolean>;
-      onEvent(cb: (p: { threadId: string; msg: any }) => void): Unsubscribe;
+      onEvent(cb: (p: { threadId: string; ev: DeskEvent }) => void): Unsubscribe;
       onPermission(cb: (p: any) => void): Unsubscribe;
       onPermissionCancel(cb: (p: { threadId: string; reqId: string }) => void): Unsubscribe;
       onClosed(cb: (p: { threadId: string; error: string | null; stderr?: string }) => void): Unsubscribe;

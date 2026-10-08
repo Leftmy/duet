@@ -42,8 +42,13 @@ npm run shortcut
 
 ## Layout
 
-- `electron/claude.mjs` — bridge to the Agent SDK: one long-lived streaming query per chat,
-  live model / effort / permission-mode switching, tool approvals, interrupts, session history.
+- `electron/core/` — the provider-neutral core: `runs.mjs` maps chats to provider runs, brokers tool
+  approvals and routes desk events to the UI and observers; `registry.mjs` holds the providers and
+  documents the provider contract.
+- `electron/providers/<id>/` — one module per agent. A provider starts runs, translates its native
+  stream and saved sessions into desk events (`renderer/src/events.ts`) and lists its sessions.
+  `providers/claude` wraps the Agent SDK (one long-lived streaming query per chat).
+- `renderer/src/lib/reduce.ts` — folds desk events into the chat feed, the same way for live runs and history.
 - `electron/main.mjs` — window, IPC, settings (`%APPDATA%\Duet\settings.json`).
 - `renderer/src` — React UI (Zustand store, Motion animations).
 

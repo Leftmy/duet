@@ -228,7 +228,7 @@ export function register(ctx) {
     let rec;
     try {
       if (task.cwd && !fs.existsSync(task.cwd)) throw new Error(t('scheduler.folderNotFound', { path: task.cwd }));
-      const r = await ctx.bridge.runHeadless({
+      const r = await ctx.core.runHeadless({
         prompt: task.prompt,
         cwd: task.cwd || os.homedir(),
         model: task.model && task.model !== 'default' ? task.model : undefined,

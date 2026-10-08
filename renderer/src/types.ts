@@ -1,3 +1,6 @@
+import type { ProviderId } from './events';
+
+export type { ProviderId };
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type PermMode = 'default' | 'acceptEdits' | 'auto' | 'bypassPermissions' | 'plan';
 export type ThemePref = 'system' | 'dark' | 'light';
@@ -25,11 +28,13 @@ export interface Project {
   folders: string[];
   createdAt: number;
   /** Defaults for new chats in this project (unset = global defaults). */
-  defaults?: { model?: string; effort?: Effort; permissionMode?: PermMode; workMode?: 'local' | 'worktree' };
+  defaults?: { provider?: ProviderId; model?: string; effort?: Effort; permissionMode?: PermMode; workMode?: 'local' | 'worktree' };
 }
 
 export interface SessionInfo {
   sessionId: string;
+  /** Agent that owns the session (Claude when missing). */
+  provider?: ProviderId;
   title: string;
   cwd: string;
   gitBranch?: string;
@@ -121,6 +126,8 @@ export interface AgentRun {
   name: string;
   type?: string;
   model?: string;
+  /** Set when the subagent is another agent than the chat's own (e.g. Codex working for Claude). */
+  provider?: ProviderId;
   prompt: string;
   color: number;
   status: 'running' | 'done' | 'error' | 'stopped';
@@ -260,6 +267,8 @@ export interface Thread {
   tasks: Record<string, BgTask>;
   agents: Record<string, AgentRun>;
   id: string;
+  /** Agent the chat talks to. */
+  provider: ProviderId;
   sessionId?: string;
   title: string;
   cwd: string;

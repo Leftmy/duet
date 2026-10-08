@@ -638,7 +638,7 @@ export function register(ctx) {
 
   async function sessions() {
     try {
-      const list = (await ctx.bridge.listSessions()) ?? [];
+      const list = (await ctx.core.listSessions()) ?? [];
       return [...list].sort((a, b) => (b.lastModified ?? 0) - (a.lastModified ?? 0));
     } catch (e) {
       log('listSessions failed:', e?.message ?? e);
@@ -683,7 +683,7 @@ export function register(ctx) {
 
   /** Continues an existing chat; the project follows the chat (its owner project, else its folder). */
   function selectChat(c) {
-    st.chat = { sessionId: c.sessionId, title: clip(oneLine(c.title), 80), cwd: c.cwd || '' };
+    st.chat = { sessionId: c.sessionId, title: clip(oneLine(c.title), 80), cwd: c.cwd || '', ...(c.provider ? { provider: c.provider } : {}) };
     const ui = readUi();
     const projects = uiProjects(ui);
     const owner = projectIdOf(ui, projects, c.sessionId, c.cwd);
@@ -692,24 +692,14 @@ export function register(ctx) {
     selectionChanged();
   }
 
-  async function lastAssistantText(sessionId, cwd) {
-    if (typeof ctx.bridge.loadSession !== 'function') return '';
+  async function lastAssistantText(sessionId, cwd, provider) {
+    if (typeof ctx.core.loadSession !== 'function') return '';
     try {
-      const msgs = await withTimeout(Promise.resolve(ctx.bridge.loadSession(sessionId, cwd || undefined)), 2500);
-      if (!Array.isArray(msgs)) return '';
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        const m = msgs[i];
-        if (m?.type !== 'assistant' || m.parent_tool_use_id) continue;
-        const content = m.message?.content;
-        const text = Array.isArray(content)
-          ? content
-              .filter((b) => b?.type === 'text')
-              .map((b) => b.text)
-              .join('\n')
-          : typeof content === 'string'
-            ? content
-            : '';
-        if (text.trim()) return text.trim();
+      const events = await withTimeout(Promise.resolve(ctx.core.loadSession(sessionId, cwd || undefined, undefined, provider)), 2500);
+      if (!Array.isArray(events)) return '';
+      for (let i = events.length - 1; i >= 0; i--) {
+        const ev = events[i];
+        if (ev?.type === 'text' && ev.mode === 'final' && !ev.agent && ev.text.trim()) return ev.text.trim();
       }
     } catch {}
     return '';
@@ -802,7 +792,7 @@ export function register(ctx) {
     const when = ago(c.lastModified);
     if (when) lines.push(t('telegram.lastActivity', { when: esc(when) }));
     if (st.chat?.sessionId === c.sessionId) lines.push(t('telegram.isCurrentChat'));
-    const preview = await lastAssistantText(c.sessionId, c.cwd);
+    const preview = await lastAssistantText(c.sessionId, c.cwd, c.provider);
     if (preview) lines.push('', `<i>${esc(clip(preview.replace(/\n{3,}/g, '\n\n'), 400))}</i>`);
     return {
       text: lines.join('\n'),
@@ -999,7 +989,7 @@ export function register(ctx) {
   /** Answers a permission request of the observed chat; false if it was already answered (e.g. in the app). */
   const respond = (run, reqId, decision, message) => {
     try {
-      return ctx.bridge.respondPermission({ threadId: run.threadId, reqId, decision, ...(message ? { message } : {}) }) !== false;
+      return ctx.core.respondPermission({ threadId: run.threadId, reqId, decision, ...(message ? { message } : {}) }) !== false;
     } catch (e) {
       log('respondPermission failed:', e?.message ?? e);
       return false;
@@ -1096,7 +1086,7 @@ export function register(ctx) {
     run.ticker.unref?.();
 
     try {
-      const res = await ctx.bridge.startVisible({
+      const res = await ctx.core.startVisible({
         prompt: run.prompt,
         cwd: run.cwd,
         ...(run.dirs.length ? { dirs: run.dirs } : {}),
@@ -1113,14 +1103,14 @@ export function register(ctx) {
     }
     await new Promise((resolve) => {
       run.resolveDone = resolve;
-      run.unobserve = ctx.bridge.observe(run.threadId, (channel, payload) => {
+      run.unobserve = ctx.core.observe(run.threadId, (channel, payload) => {
         try {
           onObserved(run, channel, payload);
         } catch (e) {
           log('event failed:', e?.message ?? e);
         }
       });
-      noteSession(run, ctx.bridge.sessionOf?.(run.threadId));
+      noteSession(run, ctx.core.sessionOf?.(run.threadId));
       if (run.cancelled) stopRun(run); // Stop was pressed while the chat was opening
     });
   }
@@ -1128,8 +1118,8 @@ export function register(ctx) {
   /** Every PROGRESS_MS: refresh the live card; finish if the chat stopped without us seeing its result. */
   function tick(run) {
     updateProgress(run);
-    if (!run.threadId || run.completing || typeof ctx.bridge.isRunning !== 'function') return;
-    run.idleTicks = ctx.bridge.isRunning(run.threadId) ? 0 : run.idleTicks + 1;
+    if (!run.threadId || run.completing || typeof ctx.core.isRunning !== 'function') return;
+    run.idleTicks = ctx.core.isRunning(run.threadId) ? 0 : run.idleTicks + 1;
     if (run.idleTicks >= 2) complete(run, { text: t('telegram.answerInApp'), missed: true }, null);
   }
 
@@ -1141,7 +1131,7 @@ export function register(ctx) {
     for (const req of [...perms.values()]) if (req.run === run) req.finish('cancel');
     if (task === run) task = null;
 
-    let sessionId = run.sessionId || (run.threadId ? ctx.bridge.sessionOf?.(run.threadId) : null) || run.resume || null;
+    let sessionId = run.sessionId || (run.threadId ? ctx.core.sessionOf?.(run.threadId) : null) || run.resume || null;
     if (sessionId) ctx.emit('tg:session', { sessionId });
 
     // Remember the chat so the next message continues it (unless the user picked something else meanwhile).
@@ -1213,7 +1203,7 @@ export function register(ctx) {
   function stopRun(run) {
     if (!run.threadId || run.completing) return;
     Promise.resolve()
-      .then(() => ctx.bridge.interrupt(run.threadId))
+      .then(() => ctx.core.interrupt(run.threadId))
       .catch((e) => log('interrupt failed:', e?.message ?? e));
     run.stopTimer = setTimeout(() => complete(run, null, null), 15000);
     run.stopTimer.unref?.();

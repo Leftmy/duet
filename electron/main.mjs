@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { claudeCli, createBridge } from './claude.mjs';
+import { claudeCli, createClaudeProvider } from './providers/claude/index.mjs';
+import { createRegistry } from './core/registry.mjs';
+import { createCore } from './core/runs.mjs';
 import { createFiles } from './files.mjs';
 import { createTerminals } from './terminal.mjs';
 import { createStats } from './stats.mjs';
@@ -155,7 +157,9 @@ const browser = createBrowser({ getWindow: () => win, emit });
 const files = createFiles({ emit });
 const terminals = createTerminals({ emit });
 const stats = createStats(app.getPath('userData'));
-const bridge = createBridge({ emit, browser, stats, log: (...a) => console.log('[claude]', ...a) });
+const registry = createRegistry();
+registry.register(createClaudeProvider({ browser, stats, log: (...a) => console.log('[claude]', ...a) }));
+const core = createCore({ emit, registry, browser, log: (...a) => console.log('[core]', ...a) });
 
 function createWindow() {
   const settings = readSettings();
@@ -234,19 +238,19 @@ function handle(channel, fn) {
   });
 }
 
-handle('claude:probe', (force) => bridge.probe(Boolean(force)));
-handle('claude:usage', () => bridge.usage());
-handle('claude:listSessions', () => bridge.listSessions());
-handle('claude:loadSession', (sessionId, cwd, segment) => bridge.loadSession(sessionId, cwd, segment));
-handle('claude:segments', (sessionId, cwd) => bridge.listSegments(sessionId, cwd));
-handle('claude:renameSession', (sessionId, title, cwd) => bridge.renameSession(sessionId, title, cwd));
-handle('claude:deleteSession', (sessionId, cwd) => bridge.deleteSession(sessionId, cwd));
-handle('claude:send', (payload) => bridge.send(payload));
-handle('claude:configure', (payload) => bridge.configure(payload));
-handle('claude:interrupt', (threadId) => bridge.interrupt(threadId));
-handle('claude:respondPermission', (payload) => bridge.respondPermission(payload));
-handle('claude:closeThread', (threadId) => bridge.closeThread(threadId));
-handle('claude:autoTitle', (payload) => bridge.autoTitle(payload));
+handle('agent:probe', (force) => core.probe(Boolean(force)));
+handle('agent:usage', (provider) => core.usage(provider));
+handle('agent:listSessions', () => core.listSessions());
+handle('agent:loadSession', (sessionId, cwd, segment, provider) => core.loadSession(sessionId, cwd, segment, provider));
+handle('agent:segments', (sessionId, cwd, provider) => core.listSegments(sessionId, cwd, provider));
+handle('agent:renameSession', (sessionId, title, cwd, provider) => core.renameSession(sessionId, title, cwd, provider));
+handle('agent:deleteSession', (sessionId, cwd, provider) => core.deleteSession(sessionId, cwd, provider));
+handle('agent:send', (payload) => core.send(payload));
+handle('agent:configure', (payload) => core.configure(payload));
+handle('agent:interrupt', (threadId) => core.interrupt(threadId));
+handle('agent:respondPermission', (payload) => core.respondPermission(payload));
+handle('agent:closeThread', (threadId) => core.closeThread(threadId));
+handle('agent:autoTitle', (payload) => core.autoTitle(payload));
 handle('browser:setBounds', (b) => browser.setBounds(b));
 handle('browser:setVisible', (v, key) => browser.setVisible(v, key));
 handle('browser:navigate', (url, key) => browser.navigate(key, url));
@@ -257,14 +261,14 @@ handle('wt:create', (cwd) => worktrees.create(cwd));
 handle('wt:apply', (dir) => worktrees.apply(dir));
 handle('wt:remove', (dir) => worktrees.remove(dir));
 handle('wt:all', () => worktrees.all());
-handle('claude:contextUsage', (threadId) => bridge.contextUsage(threadId));
-handle('claude:rewind', (payload) => bridge.rewind(payload));
-handle('claude:fork', (payload) => bridge.fork(payload));
-handle('claude:rewindConversation', (payload) => bridge.rewindConversation(payload));
-handle('claude:loadSubagents', (sessionId, cwd) => bridge.loadSubagents(sessionId, cwd));
-handle('claude:stopTask', (threadId, taskId) => bridge.stopTask(threadId, taskId));
-handle('claude:backgroundTask', (threadId, toolUseId) => bridge.backgroundTask(threadId, toolUseId));
-handle('claude:taskOutput', (file) => bridge.taskOutput(file));
+handle('agent:contextUsage', (threadId) => core.contextUsage(threadId));
+handle('agent:rewind', (payload) => core.rewind(payload));
+handle('agent:fork', (payload) => core.fork(payload));
+handle('agent:rewindConversation', (payload) => core.rewindConversation(payload));
+handle('agent:loadSubagents', (sessionId, cwd, provider) => core.loadSubagents(sessionId, cwd, provider));
+handle('agent:stopTask', (threadId, taskId) => core.stopTask(threadId, taskId));
+handle('agent:backgroundTask', (threadId, toolUseId) => core.backgroundTask(threadId, toolUseId));
+handle('agent:taskOutput', (file) => core.taskOutput(file));
 handle('app:gitStatus', (cwd) => gitStatus(cwd));
 handle('app:gitFileDiff', (root, file, untracked) => gitFileDiff(root, file, untracked));
 handle('app:gitCommit', (root, files, message) => gitCommit(root, files, message));
@@ -273,7 +277,7 @@ handle('app:gitPull', (root) => gitPull(root));
 handle('app:gitDiscard', (root, file, untracked) => gitDiscard(root, file, untracked));
 handle('app:gitBranches', (root) => gitBranches(root));
 handle('app:gitCheckout', (root, branch, create) => gitCheckout(root, branch, create));
-handle('app:commitMessage', async (root, files) => bridge.commitMessage(await gitDiffForMessage(root, files)));
+handle('app:commitMessage', async (root, files) => core.commitMessage(await gitDiffForMessage(root, files)));
 handle('app:openTargets', () => detectOpenTargets().map(({ id, label, labelKey }) => ({ id, label: labelKey ? t(labelKey) : label })));
 handle('app:openIn', (id, cwd) => openIn(id, cwd));
 
@@ -337,8 +341,8 @@ const runCli = (args) =>
       err ? reject(new Error((errOut || out || err.message).toString().trim())) : resolve(out.toString().trim()),
     ),
   );
-handle('mcp:status', () => bridge.mcpStatus());
-handle('mcp:reconnect', (name) => bridge.mcpReconnect(name));
+handle('mcp:status', () => core.mcpStatus());
+handle('mcp:reconnect', (name) => core.mcpReconnect(name));
 handle('mcp:add', ({ name, transport, target, args = [], scope = 'user', env = {} }) => {
   if (!/^[\w.:-]+$/.test(name)) throw new Error(t('main.mcpBadName'));
   const envArgs = Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
@@ -377,7 +381,7 @@ if (!app.isPackaged) {
 }
 
 // ---------- feature modules (electron/features/*.mjs export register(ctx)) ----------
-const featureCtx = { handle, emit, bridge, stats, app, getWindow: () => win, userData: app.getPath('userData'), trustWindow, preloadPath: path.join(__dirname, 'preload.cjs'), devUrl: DEV_URL, indexFile: path.join(__dirname, '..', 'dist', 'index.html') };
+const featureCtx = { handle, emit, core, stats, app, getWindow: () => win, userData: app.getPath('userData'), trustWindow, preloadPath: path.join(__dirname, 'preload.cjs'), devUrl: DEV_URL, indexFile: path.join(__dirname, '..', 'dist', 'index.html') };
 const featuresDir = path.join(__dirname, 'features');
 if (fs.existsSync(featuresDir)) {
   for (const f of fs.readdirSync(featuresDir).filter((x) => x.endsWith('.mjs'))) {
@@ -393,6 +397,6 @@ app.whenReady().then(() => {
 });
 app.on('window-all-closed', () => {
   terminals.killAll();
-  bridge.closeAll();
+  core.closeAll();
   app.quit();
 });

@@ -22,7 +22,7 @@ const MAX_SAVED = 200;
 const str = (v, max = 4000) => (typeof v === 'string' ? v.slice(0, max) : '');
 
 export function register(ctx) {
-  const { handle, emit, bridge, getWindow, userData, trustWindow, preloadPath, devUrl, indexFile } = ctx;
+  const { handle, emit, core, getWindow, userData, trustWindow, preloadPath, devUrl, indexFile } = ctx;
   const boundsFile = path.join(userData, 'detached.json');
   const settingsFile = path.join(userData, 'settings.json');
   const icon = path.join(__dirname, '..', '..', 'build', 'icon.png');
@@ -120,8 +120,8 @@ export function register(ctx) {
       focus(open);
       return { ok: true, existing: true };
     }
-    // The renderer already refuses busy chats; double-check when the bridge can tell.
-    if (typeof bridge.isBusy === 'function' && (bridge.isBusy(threadId) || (sessionId && bridge.isBusy(sessionId)))) {
+    // The renderer already refuses busy chats; double-check when the core can tell.
+    if (core.isRunning(threadId) || (sessionId && core.isRunning(sessionId))) {
       throw new Error(t('windows.busy'));
     }
 
@@ -198,7 +198,7 @@ export function register(ctx) {
       // Stop the chat's Claude Code process; the main window resumes the session if it is reopened.
       if (rec.liveThreadId) {
         try {
-          bridge.closeThread(rec.liveThreadId);
+          core.closeThread(rec.liveThreadId);
         } catch {}
       }
       if (rec.ready) emit('win:reattached', { sessionId, threadId, open: Boolean(rec.reopen) });
@@ -233,7 +233,7 @@ export function register(ctx) {
     // window talks to Claude under the session id, so the old idle process is closed.
     if (threadId !== (rec.liveThreadId ?? sessionId)) {
       try {
-        bridge.closeThread(threadId);
+        core.closeThread(threadId);
       } catch {}
     }
     emit('win:detached', { threadId, sessionId });

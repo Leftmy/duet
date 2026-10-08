@@ -8,7 +8,7 @@ import { useNow, useSmoothText } from '../lib/hooks';
 import { Markdown } from './Markdown';
 import { ToolRow, collapse } from './ToolRow';
 import { AgentEventRow, AgentMessageCard, AgentRow, AgentSendRow } from './Agents';
-import { isAgentTool } from '../lib/reduce';
+import { toolKind } from '../lib/tools';
 import { CHAPTER_TOOL, ChapterRow, DISMISS_TOOL, TASK_TOOL, TaskCard } from './SessionItems';
 import { t } from '../i18n';
 
@@ -70,7 +70,7 @@ export function ItemView({ item, live, cwd }: { item: Item; live: boolean; cwd: 
       if (item.name === CHAPTER_TOOL) return <ChapterRow item={item} />;
       if (item.name === TASK_TOOL) return <TaskCard item={item} />;
       if (item.name === DISMISS_TOOL) return null;
-      if (isAgentTool(item.name)) return <AgentRow item={item} />;
+      if (toolKind(item.name) === 'agent') return <AgentRow item={item} />;
       if (item.name === 'SendMessage') return <AgentSendRow item={item} />;
       return <ToolRow item={item} cwd={cwd} />;
     case 'notice':

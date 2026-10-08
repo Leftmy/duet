@@ -395,7 +395,7 @@ export function createPr(bridge) {
 }
 
 export function register(ctx) {
-  const pr = createPr(ctx.bridge);
+  const pr = createPr(ctx.core);
   ctx.handle('pr:status', (cwd) => pr.status(cwd));
   ctx.handle('pr:branches', (cwd) => pr.branches(cwd));
   ctx.handle('pr:draft', (cwd, base) => pr.draft(cwd, base));
