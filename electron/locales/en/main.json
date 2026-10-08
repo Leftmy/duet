@@ -1,5 +1,6 @@
 {
   "explorer": "File Explorer",
   "terminal": "Terminal",
-  "mcpBadName": "The name may contain only Latin letters, digits and . _ : -"
+  "mcpBadName": "The name may contain only Latin letters, digits and . _ : -",
+  "fileManager": "Files"
 }

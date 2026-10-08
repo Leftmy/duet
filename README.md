@@ -4,8 +4,9 @@ Desktop UI for coding agents. It runs the regular Claude Code (through the Claud
 Agent SDK) and OpenAI Codex (through `codex app-server`) that are installed and
 signed in on this machine, so it uses your own subscriptions. For personal use only.
 
-Codex is picked up from the npm CLI (`npm install -g @openai/codex`) or the Codex
-desktop app, whichever is newer; `DUET_CODEX_BIN` points to a specific binary.
+Runs on Windows and Linux (x64 and arm64). Codex is picked up from the npm CLI
+(`npm install -g @openai/codex`), the Codex desktop app or a `codex` on PATH, whichever
+is newest; `DUET_CODEX_BIN` points to a specific binary.
 
 ## Run
 
@@ -17,17 +18,24 @@ npm start
 
 Development with hot reload: `npm run dev`.
 
-Windows installer (`release\Duet Setup <version>.exe`):
+Installers go to `release/`: `npm run dist:win` (NSIS setup) or `npm run dist:linux`
+(AppImage and .deb); `npm run dist` builds for the current system.
 
-```
-npm run dist
-```
+Or a launcher for this folder (no console window): `npm run shortcut` adds Desktop and
+Start menu shortcuts on Windows, and an applications-menu entry on Linux.
 
-Or a Desktop / Start menu shortcut to this folder (no console window):
+### Linux
 
-```
-npm run shortcut
-```
+- Node.js 20+, git, and the build tools for the terminal's native module
+  (`node-pty` has no Linux prebuilds): `sudo apt install build-essential python3`
+  (Fedora: `sudo dnf groupinstall "Development Tools"`).
+- Claude Code needs no separate install (the SDK brings it). If this machine has no `~/.claude` login yet,
+  sign in once with the bundled CLI: `node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude` → `/login`.
+- Codex runs sandboxed on Linux (`workspace-write` for "Ask" and "Allow edits").
+- If `npm start` stops with "The SUID sandbox helper binary was found, but is not configured
+  correctly" (Ubuntu 24.04+ restricts unprivileged user namespaces), either fix the helper once:
+  `sudo chown root:root node_modules/electron/dist/chrome-sandbox && sudo chmod 4755 node_modules/electron/dist/chrome-sandbox`,
+  or start with `npx electron . --no-sandbox`. The .deb package sets this up itself.
 
 ## Features
 

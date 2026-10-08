@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeCli, createClaudeProvider } from './providers/claude/index.mjs';
 import { createCodexProvider } from './providers/codex/index.mjs';
@@ -13,6 +13,7 @@ import { createTerminals } from './terminal.mjs';
 import { createStats } from './stats.mjs';
 import { createWorktrees } from './worktree.mjs';
 import { setLanguage, t } from './i18n.mjs';
+import { isWin, jetbrainsScriptsDir, terminalLauncher, which } from './platform.mjs';
 import { createBrowser } from './browser.mjs';
 import { sessionToolset } from './session-tools.mjs';
 import { agentsToolset } from './core/agents.mjs';
@@ -75,33 +76,23 @@ const THEMES = {
 let win = null;
 let openTargets = null;
 
+/** JetBrains Toolbox launcher scripts (idea.cmd on Windows, idea on Linux/macOS) → IDE name. */
 const JETBRAINS = {
-  'idea.cmd': 'IntelliJ IDEA',
-  'webstorm.cmd': 'WebStorm',
-  'goland.cmd': 'GoLand',
-  'pycharm.cmd': 'PyCharm',
-  'phpstorm.cmd': 'PhpStorm',
-  'rider.cmd': 'Rider',
-  'clion.cmd': 'CLion',
-  'rustrover.cmd': 'RustRover',
-  'studio.cmd': 'Android Studio',
+  idea: 'IntelliJ IDEA',
+  webstorm: 'WebStorm',
+  goland: 'GoLand',
+  pycharm: 'PyCharm',
+  phpstorm: 'PhpStorm',
+  rider: 'Rider',
+  clion: 'CLion',
+  rustrover: 'RustRover',
+  studio: 'Android Studio',
 };
-
-function which(cmd) {
-  try {
-    return execFileSync('where.exe', [cmd], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString()
-      .split(/\r?\n/)[0]
-      .trim();
-  } catch {
-    return null;
-  }
-}
 
 /** Editors and tools a project folder can be opened in, detected once per run. */
 function detectOpenTargets() {
   if (openTargets) return openTargets;
-  const list = [{ id: 'explorer', labelKey: 'main.explorer' }];
+  const list = [{ id: 'explorer', labelKey: isWin ? 'main.explorer' : 'main.fileManager' }];
   for (const [id, cmd, label] of [
     ['vscode', 'code', 'VS Code'],
     ['cursor', 'cursor', 'Cursor'],
@@ -110,14 +101,15 @@ function detectOpenTargets() {
     const found = which(cmd);
     if (found) list.push({ id, label, cmd: found });
   }
-  const tb = path.join(process.env.LOCALAPPDATA ?? '', 'JetBrains', 'Toolbox', 'scripts');
+  const tb = jetbrainsScriptsDir();
   try {
     for (const f of fs.readdirSync(tb)) {
-      const label = JETBRAINS[f.toLowerCase()];
-      if (label) list.push({ id: `jb:${f.toLowerCase()}`, label, cmd: path.join(tb, f) });
+      const base = f.replace(/\.(cmd|bat|sh)$/i, '').toLowerCase();
+      if (JETBRAINS[base]) list.push({ id: `jb:${base}`, label: JETBRAINS[base], cmd: path.join(tb, f) });
     }
   } catch {}
-  list.push({ id: 'terminal', labelKey: 'main.terminal', cmd: which('wt') });
+  const term = terminalLauncher();
+  if (term || isWin) list.push({ id: 'terminal', labelKey: 'main.terminal', term });
   openTargets = list;
   return list;
 }
@@ -128,10 +120,13 @@ function openIn(id, cwd) {
   const detached = { detached: true, stdio: 'ignore', windowsHide: true };
   if (id === 'explorer') shell.openPath(cwd);
   else if (id === 'terminal') {
-    if (target.cmd) spawn(target.cmd, ['-d', cwd], detached).unref();
+    if (target.term) spawn(target.term.cmd, target.term.args(cwd), { ...detached, cwd }).unref();
     else spawn('cmd.exe', ['/c', 'start', '', 'powershell', '-NoExit', '-Command', `Set-Location -LiteralPath '${cwd.replace(/'/g, "''")}'`], detached).unref();
-  } else {
+  } else if (isWin) {
+    // .cmd launchers (VS Code, Toolbox scripts) need a shell on Windows.
     spawn(`"${target.cmd}"`, [`"${cwd}"`], { ...detached, shell: true }).unref();
+  } else {
+    spawn(target.cmd, [cwd], { ...detached, cwd }).unref();
   }
   return true;
 }

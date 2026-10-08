@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { which } from '../../platform.mjs';
 
 const TRIPLES = {
   'win32-x64': 'x86_64-pc-windows-msvc',
@@ -52,19 +53,27 @@ function desktopCodex() {
 let found;
 
 /**
- * The codex binary to run (newest of the CLI from npm and the one the Codex desktop app ships), with the
- * environment its launcher would give it; null when Codex isn't installed. DUET_CODEX_BIN overrides.
+ * The codex binary to run (newest of the CLI from npm, the one the Codex desktop app ships and a codex on
+ * PATH, e.g. from Homebrew or a standalone install on Linux), with the environment its launcher would give it;
+ * null when Codex isn't installed. DUET_CODEX_BIN overrides.
  */
 export function findCodex() {
   if (process.env.DUET_CODEX_BIN && fs.existsSync(process.env.DUET_CODEX_BIN)) return { bin: process.env.DUET_CODEX_BIN, env: {} };
   if (found !== undefined) return found;
   let best = null;
-  for (const c of [npmCodex(), ...desktopCodex()].filter(Boolean)) {
+  for (const c of [npmCodex(), ...desktopCodex(), pathCodex()].filter(Boolean)) {
     const v = versionOf(c.bin);
     if (v && (!best || newer(v, best.version) > 0)) best = { ...c, version: v };
   }
   found = best;
   return found;
+}
+
+/** codex on PATH (outside Windows, where the npm shim is a .cmd that needs a shell). */
+function pathCodex() {
+  if (process.platform === 'win32') return null;
+  const bin = which('codex');
+  return bin ? { bin, env: {} } : null;
 }
 
 /** The native binary of the npm package (global or next to the app) with its launcher's environment. */

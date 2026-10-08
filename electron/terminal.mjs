@@ -1,18 +1,10 @@
-// Integrated terminals (ConPTY via node-pty). One pty per terminal tab in the renderer.
+// Integrated terminals (node-pty: ConPTY on Windows, a pty on Linux/macOS). One pty per terminal tab in the renderer.
 import os from 'node:os';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
-import { execFileSync } from 'node:child_process';
+import { which } from './platform.mjs';
 
 const require = createRequire(import.meta.url);
-
-function which(cmd) {
-  try {
-    return execFileSync('where.exe', [cmd], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).toString().split(/\r?\n/)[0].trim() || null;
-  } catch {
-    return null;
-  }
-}
 let pty = null;
 function loadPty() {
   if (!pty) pty = require('node-pty');
@@ -20,7 +12,7 @@ function loadPty() {
 }
 
 function defaultShell() {
-  if (process.platform !== 'win32') return process.env.SHELL || '/bin/bash';
+  if (process.platform !== 'win32') return process.env.SHELL || (fs.existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh');
   const pwsh = ['C:\\Program Files\\PowerShell\\7\\pwsh.exe'].find((p) => fs.existsSync(p)) ?? which('pwsh.exe');
   return pwsh ?? 'powershell.exe';
 }

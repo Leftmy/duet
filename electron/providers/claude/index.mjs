@@ -21,27 +21,29 @@ import { runTool } from '../../core/tools.mjs';
 import { t as tr } from '../../i18n.mjs';
 import { createTranslator, historyEvents, subagentEvents } from './translate.mjs';
 
-// In the packaged app the SDK's claude.exe lives in app.asar.unpacked; point the SDK at it explicitly.
-const CLAUDE_EXE = (() => {
-  try {
-    const pkg = createRequire(import.meta.url).resolve('@anthropic-ai/claude-agent-sdk-win32-x64/package.json');
-    if (!pkg.includes('app.asar')) return undefined;
-    const exe = path.join(path.dirname(pkg), 'claude.exe').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
-    return fs.existsSync(exe) ? exe : undefined;
-  } catch {
-    return undefined;
+/**
+ * The Claude Code binary the SDK ships in its platform package (@anthropic-ai/claude-agent-sdk-<os>-<arch>,
+ * plus -musl builds on Linux), mapped to app.asar.unpacked in the packaged app. null when not installed.
+ */
+const bundledClaude = (() => {
+  const require = createRequire(import.meta.url);
+  const exe = process.platform === 'win32' ? 'claude.exe' : 'claude';
+  for (const name of [`${process.platform}-${process.arch}`, `${process.platform}-${process.arch}-musl`]) {
+    try {
+      const pkg = require.resolve(`@anthropic-ai/claude-agent-sdk-${name}/package.json`);
+      const bin = path.join(path.dirname(pkg), exe).replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+      if (fs.existsSync(bin)) return { bin, packaged: pkg.includes('app.asar') };
+    } catch {}
   }
+  return null;
 })();
-const exeOption = CLAUDE_EXE ? { pathToClaudeCodeExecutable: CLAUDE_EXE } : {};
+
+// In the packaged app the binary lives in app.asar.unpacked, where the SDK won't look; point it there.
+const exeOption = bundledClaude?.packaged ? { pathToClaudeCodeExecutable: bundledClaude.bin } : {};
 
 /** The Claude Code CLI binary that ships with the SDK (used for claude mcp ...). */
 export function claudeCli() {
-  try {
-    const pkg = createRequire(import.meta.url).resolve('@anthropic-ai/claude-agent-sdk-win32-x64/package.json');
-    const exe = path.join(path.dirname(pkg), 'claude.exe').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
-    if (fs.existsSync(exe)) return exe;
-  } catch {}
-  return 'claude';
+  return bundledClaude?.bin ?? 'claude';
 }
 
 class InputQueue {
