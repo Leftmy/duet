@@ -450,6 +450,8 @@ export const useStore = create<State>()((set, get) => {
     if (Date.now() - lastUsageAt > 45000) get().refreshUsage();
     const t = get().threads[id];
     if (!t) return;
+    // The first answer after a rewind has written its branch: the session on disk matches the chat again.
+    if (t.rewound) update(id, (x) => ({ ...x, rewound: false }));
     if (t.retitle && t.sessionId) {
       update(id, (x) => ({ ...x, retitle: false }));
       window.desk.renameSession(t.sessionId, t.title, t.cwd, t.provider).catch(() => {});
@@ -849,6 +851,11 @@ export const useStore = create<State>()((set, get) => {
     async syncThread(id, manual = false) {
       const t = get().threads[id];
       if (!t?.sessionId || !t.loaded || t.loading) return;
+      // Rewound: the file still has the dropped turns; it catches up with the next message.
+      if (t.rewound) {
+        if (manual) get().toast(tr('store.syncRewound'));
+        return;
+      }
       if (t.status === 'running') {
         if (manual) get().toast(tr('store.syncBusy'), 'error');
         return;
@@ -1148,6 +1155,7 @@ export const useStore = create<State>()((set, get) => {
             ...x,
             entries: x.entries.slice(0, idx),
             ...(keepSession ? {} : { sessionId: undefined }),
+            rewound: true,
             status: 'idle',
             approvals: [],
             queue: [],

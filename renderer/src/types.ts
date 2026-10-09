@@ -279,6 +279,11 @@ export interface Thread {
   handoff?: { from: ProviderId };
   /** The chat's title still has to be given to its new session (after a switch). */
   retitle?: boolean;
+  /**
+   * The conversation was rewound: the session on disk still holds the dropped turns until the next message
+   * branches off, so syncing from disk must wait.
+   */
+  rewound?: boolean;
   sessionId?: string;
   title: string;
   cwd: string;

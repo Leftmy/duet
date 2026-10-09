@@ -47,5 +47,6 @@
   "switchedTo": "Switched to {name} · the conversation carries over",
   "synced": "Chat updated: it was continued in another window",
   "syncNothing": "The chat is up to date",
-  "syncBusy": "Wait for the answer to finish, then sync"
+  "syncBusy": "Wait for the answer to finish, then sync",
+  "syncRewound": "The chat was rewound: it syncs again after your next message"
 }
