@@ -68,6 +68,12 @@ function codexCli(args) {
   );
 }
 
+/** Codex rate limits as the desk's plan limits: { plan, session, weekly }. */
+function planOf(rl) {
+  const ev = limitsEvent(rl) ?? {};
+  return { plan: rl.planType ?? null, ...(ev.session ? { session: ev.session } : {}), ...(ev.weekly ? { weekly: ev.weekly } : {}) };
+}
+
 const userInput = (text, images = []) => [
   ...(text ? [{ type: 'text', text, text_elements: [] }] : []),
   ...images.map((img) => ({ type: 'image', url: `data:${img.mediaType};base64,${img.data}` })),
@@ -380,7 +386,7 @@ export function createCodexProvider({ log = () => {} } = {}) {
           })),
         ],
         commands: [],
-        usage: limits?.rateLimits ? limitsEvent(limits.rateLimits) : null,
+        usage: limits?.rateLimits ? planOf(limits.rateLimits) : null,
       };
     },
 
@@ -418,7 +424,7 @@ export function createCodexProvider({ log = () => {} } = {}) {
     async usage() {
       const srv = await ensureServer();
       const r = await srv.request('account/rateLimits/read');
-      return limitsEvent(r?.rateLimits);
+      return r?.rateLimits ? planOf(r.rateLimits) : null;
     },
 
     async listSessions() {

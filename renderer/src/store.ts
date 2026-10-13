@@ -19,7 +19,7 @@ import type {
 import type { ProviderProbe } from './desk';
 import { applyAgentTranscripts, applyEvent, fromHistory } from './lib/reduce';
 import { buildHandoff } from './lib/handoff';
-import { basename, normalizePct, uid } from './lib/format';
+import { basename, uid } from './lib/format';
 import { askConfirm } from './lib/dialog';
 import { setLang, t as tr, type Lang } from './i18n';
 import { isDetachedWindow } from './features/detach/mode';
@@ -254,21 +254,12 @@ function blankThread(s: Settings, cwd?: string, projectId?: string): Thread {
   };
 }
 
-function usageFromProbe(u: any): UsageSummary {
-  if (!u?.rate_limits_available || !u.rate_limits) return { plan: u?.subscription_type ?? null };
-  const rl = u.rate_limits;
-  return {
-    plan: u.subscription_type,
-    session: rl.five_hour ? { pct: normalizePct(rl.five_hour.utilization), resetsAt: rl.five_hour.resets_at } : undefined,
-    weekly: rl.seven_day ? { pct: normalizePct(rl.seven_day.utilization), resetsAt: rl.seven_day.resets_at } : undefined,
-  };
+/** Plan limits as providers report them: { plan, session, weekly }, pct 0–100, resetsAt in ms. */
+function toUsage(u: any): UsageSummary {
+  const win = (w: any) => (w && typeof w.pct === 'number' ? { pct: w.pct, resetsAt: w.resetsAt ?? null } : undefined);
+  return { plan: u?.plan ?? null, session: win(u?.session), weekly: win(u?.weekly) };
 }
 
-/** Codex reports limits as a desk limits event; Claude as its own usage object. */
-function usageFromLimits(ev: any): UsageSummary {
-  const win = (w?: { pct: number; resetsAt?: any }) => (w ? { pct: normalizePct(w.pct), resetsAt: w.resetsAt } : undefined);
-  return { session: win(ev?.session), weekly: win(ev?.weekly) };
-}
 
 /** Models of an agent (Claude's come from the main probe). */
 export const modelsOf = (s: { models: ModelInfo[]; providers: Record<string, ProviderProbe> }, provider: ProviderId): ModelInfo[] =>
@@ -526,7 +517,7 @@ export const useStore = create<State>()((set, get) => {
       window.desk.onEvent(({ threadId, ev }) => {
         if (ev.type === 'limits') {
           const provider = ev.provider ?? get().threads[threadId]?.provider ?? 'claude';
-          const patch = usageFromLimits(ev);
+          const patch = toUsage(ev);
           const merge = (u: UsageSummary = {}) => ({ ...u, ...(patch.session ? { session: patch.session } : {}), ...(patch.weekly ? { weekly: patch.weekly } : {}) });
           set((s) => ({
             usageBy: { ...s.usageBy, [provider]: merge(s.usageBy[provider]) },
@@ -670,12 +661,11 @@ export const useStore = create<State>()((set, get) => {
       try {
         const p = await window.desk.probe();
         set((s) => ({
-          usageBy: {
-            ...s.usageBy,
-            claude: usageFromProbe(p.usage),
-            ...Object.fromEntries(Object.entries(p.providers ?? {}).filter(([k, v]) => k !== 'claude' && v.usage).map(([k, v]) => [k, usageFromLimits(v.usage)])),
-          },
+          usageBy: { ...s.usageBy, ...Object.fromEntries(Object.entries(p.providers ?? {}).filter(([, v]) => v.usage).map(([k, v]) => [k, toUsage(v.usage)])) },
         }));
+        // Limits move with time (and reset): keep them fresh while the app is open.
+        setInterval(() => get().refreshUsage(), 5 * 60_000);
+        window.addEventListener('focus', () => Date.now() - lastUsageAt > 60_000 && get().refreshUsage());
         set({
           ready: true,
           providers: p.providers ?? {},
@@ -683,7 +673,7 @@ export const useStore = create<State>()((set, get) => {
           account: p.account ?? {},
           commands: p.commands ?? [],
           mcp: (p as any).mcp ?? [],
-          usage: usageFromProbe(p.usage),
+          usage: toUsage(p.providers?.claude?.usage ?? p.usage),
         });
         lastUsageAt = Date.now();
       } catch (e: any) {
@@ -1072,12 +1062,20 @@ export const useStore = create<State>()((set, get) => {
       }
     },
 
+    /** Plan limits of every available agent. */
     async refreshUsage() {
       lastUsageAt = Date.now();
-      try {
-        const u = await window.desk.usage();
-        if (u) set({ usage: usageFromProbe(u) });
-      } catch {}
+      const ids = (Object.keys(get().providers) as ProviderId[]).filter((id) => get().providers[id].available);
+      await Promise.all(
+        (ids.length ? ids : (['claude'] as ProviderId[])).map(async (id) => {
+          try {
+            const u = await window.desk.usage(id);
+            if (!u) return;
+            const usage = toUsage(u);
+            set((s) => ({ usageBy: { ...s.usageBy, [id]: usage }, ...(id === 'claude' ? { usage } : {}) }));
+          } catch {}
+        }),
+      );
     },
 
     toast(text, tone = 'info') {

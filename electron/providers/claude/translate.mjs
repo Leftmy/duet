@@ -362,11 +362,16 @@ export function createTranslator(mode = 'live') {
         return;
       case 'rate_limit_event': {
         const info = msg.rate_limit_info ?? {};
-        const win = info.utilization != null ? { pct: info.utilization, resetsAt: info.resetsAt } : undefined;
+        // Utilization is a 0–1 fraction here (the /usage endpoint reports 0–100); resetsAt is in seconds.
+        const win = (w) => (w?.utilization != null ? { pct: Math.max(0, Math.min(100, w.utilization * 100)), resetsAt: w.resetsAt ? w.resetsAt * 1000 : null } : undefined);
+        // Current CLIs report every window in unifiedWindows; older ones only the window the event is about.
+        const windows = info.unifiedWindows ?? (info.rateLimitType ? { [info.rateLimitType]: info } : {});
+        const session = win(windows.five_hour);
+        const weekly = win(windows.seven_day);
         out.push({
           type: 'limits',
-          ...(win && info.rateLimitType === 'five_hour' ? { session: win } : {}),
-          ...(win && info.rateLimitType === 'seven_day' ? { weekly: win } : {}),
+          ...(session ? { session } : {}),
+          ...(weekly ? { weekly } : {}),
           ...(info.status === 'rejected' ? { rejected: true } : {}),
         });
         return;

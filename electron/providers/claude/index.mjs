@@ -155,6 +155,16 @@ async function oneShot({ prompt, system, model = 'haiku', timeoutMs = 90000, lab
   return out;
 }
 
+/** A /usage limit window → { pct 0–100, resetsAt ms }. */
+const usageWindow = (w) => (w && w.utilization != null ? { pct: Math.max(0, Math.min(100, w.utilization)), resetsAt: w.resets_at ? Date.parse(w.resets_at) || null : null } : undefined);
+
+/** Claude's /usage data as the desk's plan limits: { plan, session, weekly } (pct 0–100, resetsAt in ms). */
+export function planLimits(u) {
+  if (!u) return null;
+  const rl = u.rate_limits_available ? u.rate_limits : null;
+  return { plan: u.subscription_type ?? null, ...(rl ? { session: usageWindow(rl.five_hour), weekly: usageWindow(rl.seven_day) } : {}) };
+}
+
 export function createClaudeProvider({ stats, log = () => {} }) {
   const outputFiles = new Set();
   const live = new Set();
@@ -319,7 +329,7 @@ export function createClaudeProvider({ stats, log = () => {} }) {
         stopTask: (taskId) => q.stopTask(taskId),
         /** Moves a running foreground Bash/agent call to the background (like Ctrl+B in the CLI). */
         backgroundTask: (toolUseId) => q.backgroundTasks(toolUseId),
-        usage: () => readUsage(q),
+        usage: async () => planLimits(await readUsage(q)),
       });
     },
 
@@ -331,7 +341,7 @@ export function createClaudeProvider({ stats, log = () => {} }) {
         const init = await withTimeout(q.initializationResult(), 60000, 'initialize');
         let usage = null;
         try {
-          usage = await readUsage(q);
+          usage = planLimits(await readUsage(q));
         } catch (e) {
           log('usage unavailable', String(e?.message || e));
         }
@@ -358,6 +368,7 @@ export function createClaudeProvider({ stats, log = () => {} }) {
       }
     },
 
+    /** Plan limits now: from a live session, else a short-lived one (no MCP servers, nothing sent). */
     async usage() {
       for (const run of live) {
         if (!run.q) continue;
@@ -367,7 +378,15 @@ export function createClaudeProvider({ stats, log = () => {} }) {
           break;
         }
       }
-      return (await this.probe(true)).usage;
+      const input = new InputQueue();
+      const q = query({ prompt: input, options: { ...exeOption, cwd: os.homedir(), mcpServers: {}, strictMcpConfig: true } });
+      try {
+        await withTimeout(q.initializationResult(), 60000, 'initialize');
+        return planLimits(await readUsage(q));
+      } finally {
+        input.close();
+        q.close();
+      }
     },
 
     async mcpStatus() {

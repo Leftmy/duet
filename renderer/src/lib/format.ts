@@ -112,11 +112,6 @@ export function modelLabel(value: string, models: { value: string; displayName: 
   return m.displayName;
 }
 
-export function normalizePct(v: number | null | undefined) {
-  if (v == null || Number.isNaN(v)) return 0;
-  return v <= 1 && v > 0 && !Number.isInteger(v) ? v * 100 : v;
-}
-
 export function fileToAttachment(file: File): Promise<{ mediaType: string; data: string; name: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

@@ -31,6 +31,7 @@ import { projectName, projectOf, useStore } from '../store';
 import type { Project, ProviderId, SessionInfo, Thread, UsageSummary } from '../types';
 import { relativeTime, resetTime } from '../lib/format';
 import { askConfirm } from '../lib/dialog';
+import { useNow } from '../lib/hooks';
 import { t } from '../i18n';
 import { FloatingMenu, MenuItem, anchorFrom, spring, type MenuAnchor } from './Popover';
 import { AgentMark, AgentMarks } from './AgentMark';
@@ -84,6 +85,15 @@ function AgentsUsage({ active }: { active: ProviderId }) {
   const claudeUsage = useStore((s) => s.usage);
   const claudeAccount = useStore((s) => s.account);
   const ids = (Object.keys(providers) as ProviderId[]).filter((id) => providers[id].available);
+  // Re-check every half minute so a window whose reset time has passed stops showing its old value.
+  const now = useNow(ids.length > 0, 30_000);
+  const expired = ids.some((id) => {
+    const u = usageBy[id];
+    return [u?.session, u?.weekly].some((w) => w?.resetsAt && Number(w.resetsAt) <= now);
+  });
+  useEffect(() => {
+    if (expired) useStore.getState().refreshUsage();
+  }, [expired]);
   if (!ids.length) return null;
   const openAgents = () => useStore.setState({ settingsOpen: true });
   return (
@@ -99,8 +109,8 @@ function AgentsUsage({ active }: { active: ProviderId }) {
               {plan && <span className="muted small truncate">{plan}</span>}
             </span>
             <span className="agent-usage-bars">
-              <MiniBar label={t('sidebar.usageSessionShort')} w={u.session} />
-              <MiniBar label={t('sidebar.usageWeekShort')} w={u.weekly} />
+              <MiniBar label={t('sidebar.usageSessionShort')} w={u.session} now={now} />
+              <MiniBar label={t('sidebar.usageWeekShort')} w={u.weekly} now={now} />
             </span>
           </button>
         );
@@ -109,8 +119,10 @@ function AgentsUsage({ active }: { active: ProviderId }) {
   );
 }
 
-function MiniBar({ label, w }: { label: string; w?: { pct: number; resetsAt?: string | number | null } }) {
-  if (!w) return <span className="mini-bar is-empty" />;
+function MiniBar({ label, w: raw, now }: { label: string; w?: { pct: number; resetsAt?: string | number | null }; now: number }) {
+  if (!raw) return <span className="mini-bar is-empty" />;
+  // Past its reset time the window starts over, even before fresh numbers arrive.
+  const w = raw.resetsAt && Number(raw.resetsAt) <= now ? { pct: 0, resetsAt: null } : raw;
   const tone = w.pct >= 90 ? 'danger' : w.pct >= 70 ? 'warn' : '';
   return (
     <span className="mini-bar" title={w.resetsAt ? t('sidebar.resets', { time: resetTime(w.resetsAt) }) : undefined}>
