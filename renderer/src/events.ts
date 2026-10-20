@@ -3,12 +3,12 @@
 // the renderer folds them into entries (lib/reduce.ts). Keep this file and electron/core/events.mjs in sync.
 import type { AgentRun, BgTask, ContextUsage, ImageAttachment, LimitWindow, PermMode } from './types';
 
-export type ProviderId = 'claude' | 'codex';
+export type ProviderId = 'claude' | 'codex' | 'antigravity' | 'gemini';
 
 /** Where a notice goes: 'open' starts a turn if none is open, 'feed' joins the open or the last turn, 'if-open' only an open turn. */
 export type NoticeAt = 'open' | 'feed' | 'if-open';
 
-export type DeskEvent =
+export type DeskEvent = { timestamp?: number } & (
   /** The provider's session id (first event of a run, and again after a resume). */
   | { type: 'session'; sessionId: string; model?: string }
   | { type: 'status'; activity: 'compacting' | 'retrying' | null; attempt?: number; max?: number; permissionMode?: PermMode }
@@ -63,4 +63,4 @@ export type DeskEvent =
   | { type: 'turn.end'; durationMs?: number; isError?: boolean; error?: string; text?: string; costUsd?: number }
   | { type: 'limits'; provider?: ProviderId; session?: LimitWindow; weekly?: LimitWindow; rejected?: boolean }
   /** Live context-window occupancy, for providers that report it with the stream. */
-  | { type: 'context'; usage: ContextUsage };
+  | { type: 'context'; usage: ContextUsage });

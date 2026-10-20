@@ -434,7 +434,8 @@ export function createTranslator(mode = 'live') {
       if (!msg || typeof msg !== 'object') return out;
       if (mode === 'history') history(out, msg);
       else live(out, msg);
-      return out;
+      const timestamp = Date.parse(msg.timestamp);
+      return mode === 'history' && Number.isFinite(timestamp) ? out.map((ev) => ({ ...ev, timestamp })) : out;
     },
   };
 }

@@ -1,4 +1,5 @@
 {
+  "mcpViaCli": "Manage {name} MCP servers with {cmd} in a terminal. New chats use the CLI configuration.",
   "title": "Settings",
   "closeEsc": "Close (Esc)",
   "nav_general": "General",

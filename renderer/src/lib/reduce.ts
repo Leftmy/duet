@@ -320,8 +320,9 @@ function applyTask(t: Thread, ev: Extract<DeskEvent, { type: 'task' }>, now: num
 
 /** Applies one desk event to a thread. Returns a new thread object. */
 export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean } = {}): Thread {
-  const now = Date.now();
   const historical = Boolean(opts.history);
+  const last = t0.entries.at(-1);
+  const now = ev.timestamp ?? (historical && last ? (last.kind === 'user' ? last.ts : last.startedAt) : Date.now());
   const t: Thread = { ...t0, entries: [...t0.entries] };
   const ed = new TurnEditor(t.entries, now, t.provider);
   /** Adds an item to the open turn, or to the last turn when the agent is idle. */

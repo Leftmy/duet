@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Archive,
@@ -35,40 +36,9 @@ import { useNow } from '../lib/hooks';
 import { t } from '../i18n';
 import { FloatingMenu, MenuItem, anchorFrom, spring, type MenuAnchor } from './Popover';
 import { AgentMark, AgentMarks } from './AgentMark';
+import { chatRows, type ChatRow as Row } from '../lib/chat-sessions';
 
-// Chat titles are stored data written under whatever UI language was active, so they are matched
-// against the strings of every locale, not just the current one.
-const allLocales = (dicts: Record<string, Record<string, string>>, key: string) =>
-  Object.values(dicts)
-    .map((d) => d[key]?.trim())
-    .filter((v): v is string => Boolean(v));
-const sidebarDicts = import.meta.glob('../i18n/locales/*/sidebar.json', { eager: true, import: 'default' }) as Record<string, Record<string, string>>;
-const commonDicts = import.meta.glob('../i18n/locales/*/common.json', { eager: true, import: 'default' }) as Record<string, Record<string, string>>;
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/** Matches the " (fork N)" suffix of continued/forked sessions, in any UI language. */
-export const FORK_SUFFIX = new RegExp(
-  `\\s*\\((${['fork', ...allLocales(sidebarDicts, 'forkWord')].map(escapeRe).join('|')})(\\s*\\d+)?\\)\\s*$`,
-  'i',
-);
-const GENERIC_TITLES = new Set([...allLocales(commonDicts, 'newChat'), ...allLocales(commonDicts, 'untitled')].map((s) => s.toLowerCase()));
 const DRAG_TYPE = 'application/x-desk-chat';
-
-/** Title without the " (fork N)" suffix Claude adds to continued sessions; '' when too generic to group. */
-function baseTitle(title: string) {
-  const s = title.replace(FORK_SUFFIX, '').trim().toLowerCase();
-  return s.length >= 6 && !GENERIC_TITLES.has(s) ? s : '';
-}
-
-interface Row {
-  key: string;
-  title: string;
-  ts: number;
-  cwd: string;
-  session?: SessionInfo;
-  thread?: Thread;
-  older?: Row[];
-}
 
 interface Group {
   key: string;
@@ -78,12 +48,13 @@ interface Group {
   latest: number;
 }
 
-/** Plan limits of every agent: a compact block per agent (5-hour window and week). */
+/** Plan limits of every agent: a compact block per agent (5-hour window and week), with per-group breakdown on hover. */
 function AgentsUsage({ active }: { active: ProviderId }) {
   const providers = useStore((s) => s.providers);
   const usageBy = useStore((s) => s.usageBy);
   const claudeUsage = useStore((s) => s.usage);
   const claudeAccount = useStore((s) => s.account);
+  const [hover, setHover] = useState<{ id: ProviderId; rect: DOMRect } | null>(null);
   const ids = (Object.keys(providers) as ProviderId[]).filter((id) => providers[id].available);
   // Re-check every half minute so a window whose reset time has passed stops showing its old value.
   const now = useNow(ids.length > 0, 30_000);
@@ -95,14 +66,29 @@ function AgentsUsage({ active }: { active: ProviderId }) {
     if (expired) useStore.getState().refreshUsage();
   }, [expired]);
   if (!ids.length) return null;
-  const openAgents = () => useStore.setState({ settingsOpen: true });
+  const openAgents = () => {
+    useStore.setState({ settingsOpen: true, settingsSection: 'claude' });
+    useStore.getState().refreshUsage();
+  };
+  const hoveredUsage: UsageSummary | undefined = hover ? usageBy[hover.id] ?? (hover.id === 'claude' ? claudeUsage : {}) : undefined;
+  const hoveredPlan = hover
+    ? (hover.id === 'claude' ? claudeAccount.subscriptionType ?? hoveredUsage?.plan : providers[hover.id]?.account?.subscriptionType) ?? ''
+    : '';
+  const showTip = Boolean(hover && hoveredUsage && (hoveredUsage.groups?.length || hoveredUsage.session || hoveredUsage.weekly));
+
   return (
     <div className="agents-usage">
       {ids.map((id) => {
         const u: UsageSummary = usageBy[id] ?? (id === 'claude' ? claudeUsage : {});
         const plan = (id === 'claude' ? claudeAccount.subscriptionType ?? u.plan : providers[id].account?.subscriptionType) ?? '';
         return (
-          <button key={id} className={`agent-usage ${id === active ? 'is-active' : ''}`} onClick={openAgents} title={t('sidebar.agentUsageHint')}>
+          <button
+            key={id}
+            className={`agent-usage ${id === active ? 'is-active' : ''}`}
+            onClick={openAgents}
+            onMouseEnter={(e) => setHover({ id, rect: e.currentTarget.getBoundingClientRect() })}
+            onMouseLeave={() => setHover((h) => (h?.id === id ? null : h))}
+          >
             <span className="agent-usage-head">
               <AgentMark provider={id} size={13} />
               <span className="agent-usage-name">{providers[id].label}</span>
@@ -115,17 +101,90 @@ function AgentsUsage({ active }: { active: ProviderId }) {
           </button>
         );
       })}
+      {typeof document !== 'undefined' &&
+        document.body &&
+        createPortal(
+          <AnimatePresence>
+            {showTip && hover && hoveredUsage && (
+              <motion.div
+                key={hover.id}
+                className="popover usage-tooltip"
+                style={{
+                  position: 'fixed',
+                  left: Math.min(hover.rect.right + 10, window.innerWidth - 300),
+                  bottom: Math.max(10, window.innerHeight - hover.rect.bottom),
+                  width: 280,
+                  pointerEvents: 'none',
+                }}
+                initial={{ opacity: 0, scale: 0.96, x: -4 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.1 } }}
+                transition={spring}
+              >
+                <div className="usage-tip-head">
+                  <AgentMark provider={hover.id} size={14} />
+                  <span className="agent-usage-name">{providers[hover.id]?.label}</span>
+                  {hoveredPlan && <span className="muted small truncate">{hoveredPlan}</span>}
+                </div>
+                {hoveredUsage.groups?.length ? (
+                  <div className="usage-tip-groups">
+                    {hoveredUsage.groups.map((g) => (
+                      <div key={g.name} className="usage-tip-group">
+                        <div className="usage-tip-group-title">{g.name}</div>
+                        <div className="agent-usage-bars">
+                          <MiniBar label={t('sidebar.usageSessionShort')} w={g.session} now={now} showReset />
+                          <MiniBar label={t('sidebar.usageWeekShort')} w={g.weekly} now={now} showReset />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="usage-tip-groups">
+                    <div className="usage-tip-group">
+                      <div className="agent-usage-bars">
+                        <MiniBar label={t('sidebar.usageSessionShort')} w={hoveredUsage.session} now={now} showReset />
+                        <MiniBar label={t('sidebar.usageWeekShort')} w={hoveredUsage.weekly} now={now} showReset />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
     </div>
   );
 }
 
-function MiniBar({ label, w: raw, now }: { label: string; w?: { pct: number; resetsAt?: string | number | null }; now: number }) {
-  if (!raw) return <span className="mini-bar is-empty" />;
+function MiniBar({
+  label,
+  w: raw,
+  now,
+  showReset,
+}: {
+  label: string;
+  w?: { pct: number; resetsAt?: string | number | null };
+  now: number;
+  showReset?: boolean;
+}) {
+  if (!raw) {
+    return showReset ? (
+      <span className="mini-bar is-empty">
+        <span className="mini-bar-row">
+          <span>{label}</span>
+          <span>—</span>
+        </span>
+      </span>
+    ) : (
+      <span className="mini-bar is-empty" />
+    );
+  }
   // Past its reset time the window starts over, even before fresh numbers arrive.
   const w = raw.resetsAt && Number(raw.resetsAt) <= now ? { pct: 0, resetsAt: null } : raw;
   const tone = w.pct >= 90 ? 'danger' : w.pct >= 70 ? 'warn' : '';
   return (
-    <span className="mini-bar" title={w.resetsAt ? t('sidebar.resets', { time: resetTime(w.resetsAt) }) : undefined}>
+    <span className="mini-bar" title={!showReset && w.resetsAt ? t('sidebar.resets', { time: resetTime(w.resetsAt) }) : undefined}>
       <span className="mini-bar-row">
         <span>{label}</span>
         <span>{Math.round(w.pct)}%</span>
@@ -133,56 +192,14 @@ function MiniBar({ label, w: raw, now }: { label: string; w?: { pct: number; res
       <span className="usage-track">
         <motion.span className={`usage-fill ${tone}`} initial={false} animate={{ width: `${Math.min(100, w.pct)}%` }} transition={spring} />
       </span>
+      {showReset && w.resetsAt && <span className="mini-bar-reset muted">{t('sidebar.resets', { time: resetTime(w.resetsAt) })}</span>}
     </span>
   );
 }
 
-/**
- * Collapses the parts of one conversation into a single row with older parts: sessions linked when a
- * chat moved to another agent, and continuations of a long conversation ("… (fork 2)").
- */
-function chainRows(rows: Row[], links: Record<string, string> = {}) {
-  rows.sort((a, b) => b.ts - a.ts);
-  // Linked sessions form one group whose newest part leads (a chat can go back to an older session).
-  const root = new Map<string, string>();
-  const find = (k: string): string => {
-    const r = root.get(k) ?? k;
-    return r === k ? k : find(r);
-  };
-  const keys = new Set(rows.map((r) => r.key));
-  for (const [from, to] of Object.entries(links)) if (keys.has(from) && keys.has(to) && find(from) !== find(to)) root.set(find(from), find(to));
-  const absorbed = new Set<string>();
-  const linked = new Map<string, Row[]>();
-  const leaders = new Map<string, Row>();
-  for (const r of rows) {
-    const g = find(r.key);
-    const lead = leaders.get(g);
-    if (!lead) leaders.set(g, r);
-    else {
-      absorbed.add(r.key);
-      linked.set(lead.key, [...(linked.get(lead.key) ?? []), r]);
-    }
-  }
-  const heads = new Map<string, Row>();
-  const out: Row[] = [];
-  for (const r of rows) {
-    if (absorbed.has(r.key)) continue;
-    const parts = [r, ...(linked.get(r.key) ?? [])];
-    const base = baseTitle(r.title);
-    const head = base ? heads.get(base) : undefined;
-    if (head) (head.older ??= []).push(...parts);
-    else {
-      const row = { ...r, older: parts.length > 1 ? parts.slice(1) : undefined };
-      if (base) heads.set(base, row);
-      out.push(row);
-    }
-  }
-  return out;
-}
-
-const rowProvider = (r: Row): ProviderId => r.thread?.provider ?? r.session?.provider ?? 'claude';
+const rowProvider = (r: Row): ProviderId => r.thread?.provider ?? r.provider ?? r.session?.provider ?? 'claude';
 /** Agents of a row and its older parts, newest first. */
-const rowProviders = (r: Row) => [...new Set([r, ...(r.older ?? [])].map(rowProvider))];
+const rowProviders = (r: Row) => [rowProvider(r)];
 
 const rowKeys = (r: Row) => [r.key, ...(r.older ?? []).map((o) => o.key)];
 
@@ -201,12 +218,9 @@ const useSelection = create<{ rows: Record<string, Row>; toggle(r: Row): void; c
 
 async function renameRow(row: Row, title: string) {
   const s = useStore.getState();
+  if (row.thread) s.renameThread(row.thread.id, title.trim());
   for (const r of [row, ...(row.older ?? [])]) {
-    // Keep "(fork N)" so the parts of a long conversation stay grouped.
-    const next = title.trim() + (r.title.match(FORK_SUFFIX)?.[0] ?? '');
-    const open = Object.values(s.threads).find((t) => t.id === r.key || (t.sessionId && t.sessionId === r.session?.sessionId));
-    if (open) s.renameThread(open.id, next);
-    else if (r.session) await window.desk.renameSession(r.session.sessionId, next, r.session.cwd, r.session.provider).catch(() => {});
+    if (r.session && r.session.sessionId !== row.thread?.sessionId) await window.desk.renameSession(r.session.sessionId, title.trim(), r.session.cwd, r.session.provider).catch(() => {});
   }
   s.refreshSessions();
 }
@@ -217,16 +231,15 @@ async function deleteRow(row: Row, confirmed = false) {
     confirmed ||
     (await askConfirm({
       title: t('sidebar.deleteChatTitle'),
-      message: parts.length > 1 ? t('sidebar.deleteChatPartsMessage', { n: parts.length }) : t('sidebar.deleteChatMessage'),
+      message: t('sidebar.deleteChatMessage'),
       confirmLabel: t('common.delete'),
       danger: true,
     }));
   if (!ok) return;
   const s = useStore.getState();
+  if (row.thread) s.deleteThread(row.thread.id);
   for (const r of parts) {
-    const open = Object.values(s.threads).find((t) => t.id === r.key || (t.sessionId && t.sessionId === r.session?.sessionId));
-    if (open) s.deleteThread(open.id);
-    else if (r.session) await window.desk.deleteSession(r.session.sessionId, r.session.cwd, r.session.provider).catch(() => {});
+    if (r.session && r.session.sessionId !== row.thread?.sessionId) await window.desk.deleteSession(r.session.sessionId, r.session.cwd, r.session.provider).catch(() => {});
   }
   s.archiveChats(rowKeys(row), false);
   s.refreshSessions();
@@ -237,7 +250,7 @@ function ChatMenu({ row, archived, onRename, onClose }: { row: Row; archived: bo
   const settings = useStore((s) => s.settings);
   const current = projectOf(settings, row.key, row.cwd);
   const { moveChat, archiveChats, pinChats } = useStore.getState();
-  const pinned = settings.pinned.includes(row.key);
+  const pinned = rowKeys(row).some((key) => settings.pinned.includes(key));
   const [moving, setMoving] = useState(false);
   const move = (id: string | null) => {
     for (const k of rowKeys(row)) moveChat(k, id);
@@ -280,7 +293,7 @@ function ChatMenu({ row, archived, onRename, onClose }: { row: Row; archived: bo
         icon={pinned ? <PinOff size={14} /> : <Pin size={14} />}
         label={pinned ? t('sidebar.unpin') : t('sidebar.pin')}
         onClick={() => {
-          pinChats([row.key], !pinned);
+          pinChats(rowKeys(row), !pinned);
           onClose();
         }}
       />
@@ -314,20 +327,14 @@ function ChatMenu({ row, archived, onRename, onClose }: { row: Row; archived: bo
 
 function ChatRow({
   row,
-  part,
   active,
   running,
   archived,
-  chainOpen,
-  onToggleChain,
 }: {
   row: Row;
-  part?: number;
   active: boolean;
   running: boolean;
   archived: boolean;
-  chainOpen?: boolean;
-  onToggleChain?: () => void;
 }) {
   const worktrees = useStore((s) => s.worktrees);
   const [menu, setMenu] = useState<MenuAnchor | null>(null);
@@ -338,7 +345,7 @@ function ChatRow({
     closedAt.current = Date.now();
     setMenu(null);
   }, []);
-  const shown = part ? t('sidebar.part', { n: part }) : baseTitle(row.title) ? row.title.replace(FORK_SUFFIX, '') : row.title;
+  const shown = row.title;
   // With more than one agent, every chat shows whose it is.
   const multiAgent = useStore((s) => Object.keys(s.providers).length > 1);
 
@@ -346,7 +353,7 @@ function ChatRow({
   const selecting = useSelection((x) => Object.keys(x.rows).length > 0);
 
   const open = (e: React.MouseEvent) => {
-    if (!part && (e.shiftKey || selecting)) {
+    if (e.shiftKey || selecting) {
       useSelection.getState().toggle(row);
       return;
     }
@@ -354,18 +361,18 @@ function ChatRow({
     const go = () =>
       row.thread
         ? activate(row.thread.id)
-        : row.session && openSession(row.session, part ? undefined : (row.older ?? []).map((o) => o.session!).filter(Boolean));
+        : row.session && openSession(row.session, (row.older ?? []).map((o) => o.session!).filter(Boolean));
     if ((e.ctrlKey || e.metaKey) && !active) openSplit(go);
     else go();
   };
 
   const startRename = () => {
-    setValue(row.title.replace(FORK_SUFFIX, ''));
+    setValue(row.title);
     setRenaming(true);
   };
   const commitRename = () => {
     setRenaming(false);
-    if (value.trim() && value.trim() !== row.title.replace(FORK_SUFFIX, '')) renameRow(row, value);
+    if (value.trim() && value.trim() !== row.title) renameRow(row, value);
   };
 
   return (
@@ -373,8 +380,8 @@ function ChatRow({
       <div
         role="button"
         tabIndex={0}
-        className={`side-item thread-row ${part ? 'chain-part' : ''} ${active ? 'is-active' : ''} ${selected ? 'is-selected' : ''}`}
-        draggable={!part && !renaming}
+        className={`side-item thread-row ${active ? 'is-active' : ''} ${selected ? 'is-selected' : ''}`}
+        draggable={!renaming}
         onDragStart={(e) => {
           const sel = Object.values(useSelection.getState().rows);
           const rows = selected && sel.length ? sel : [row];
@@ -402,8 +409,7 @@ function ChatRow({
         title={`${row.title}\n${t('sidebar.rowHint')}`}
       >
         {active && <motion.span layoutId="thread-active" className="active-bg" transition={spring} />}
-        {multiAgent && !part && <AgentMarks providers={rowProviders(row)} size={13} />}
-        {multiAgent && part ? <AgentMark provider={rowProvider(row)} size={11} /> : null}
+        {multiAgent && <AgentMarks providers={rowProviders(row)} size={13} />}
         {(worktrees[row.cwd.toLowerCase()] || row.thread?.worktree) && <GitFork size={12} className="muted" style={{ flexShrink: 0 }} />}
         {renaming ? (
           <input
@@ -422,22 +428,9 @@ function ChatRow({
         ) : (
           <span className="truncate">{shown}</span>
         )}
-        {!part && row.older?.length ? (
-          <span
-            role="button"
-            className={`chain-badge ${chainOpen ? 'is-open' : ''}`}
-            title={t('sidebar.chainHint')}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleChain?.();
-            }}
-          >
-            ×{row.older.length + 1}
-          </span>
-        ) : null}
         {!renaming && (running ? <span className="dot-run" /> : <span className="row-time">{relativeTime(row.ts)}</span>)}
       </div>
-      {!part && !renaming && (
+      {!renaming && (
         <button
           className="icon-btn sm row-menu-btn"
           title={t('sidebar.chatActions')}
@@ -731,7 +724,6 @@ export function Sidebar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [allProjects, setAllProjects] = useState(false);
-  const [openChains, setOpenChains] = useState<Record<string, boolean>>({});
   const [archiveOpen, setArchiveOpen] = useState(false);
   const PROJECT_LIMIT = 10;
 
@@ -759,9 +751,9 @@ export function Sidebar() {
         latest: p.createdAt,
       });
     const add = (row: Row, projectId?: string) => {
-      if (archivedSet.has(row.key)) return archived.push(row);
+      if (rowKeys(row).some((key) => archivedSet.has(key))) return archived.push(row);
       if (q && !row.title.toLowerCase().includes(q)) return;
-      if (pinnedSet.has(row.key)) return pinned.push(row);
+      if (rowKeys(row).some((key) => pinnedSet.has(key))) return pinned.push(row);
       const project = (projectId && settings.projects.find((p) => p.id === projectId)) || projectOf(settings, row.key, row.cwd);
       const k = project ? 'p:' + project.id : 'f:' + row.cwd.toLowerCase();
       let g = byKey.get(k);
@@ -771,42 +763,14 @@ export function Sidebar() {
     };
     // Worktree chats are listed under the project they were branched from.
     const baseOf = (cwd: string) => worktrees[(cwd || '').toLowerCase()]?.base ?? cwd ?? '';
-    const known = new Set(sessions.map((s) => s.sessionId));
     const subSessions = new Set(settings.subSessions ?? []);
-    for (const t of Object.values(threads)) {
-      if (t.entries.length && (!t.sessionId || !known.has(t.sessionId))) {
-        add(
-          {
-            key: t.sessionId ?? t.id,
-            title: t.title,
-            ts: Date.now(),
-            cwd: baseOf(t.cwd),
-            thread: t,
-          },
-          t.projectId,
-        );
-      }
-    }
-    for (const s of sessions) {
-      if (subSessions.has(s.sessionId)) continue;
-      const open = Object.values(threads).find((t) => t.sessionId === s.sessionId);
-      add(
-        {
-          key: s.sessionId,
-          title: s.title,
-          ts: s.lastModified,
-          cwd: baseOf(s.cwd),
-          session: s,
-        },
-        open?.projectId,
-      );
-    }
+    const rows = chatRows(sessions.filter((s) => !subSessions.has(s.sessionId)), threads, settings.links, settings.chatProviders);
+    for (const row of rows) add({ ...row, cwd: baseOf(row.cwd) }, row.thread?.projectId);
     const list = [...byKey.values()]
       .filter((g) => g.rows.length || (g.project && !q))
       .sort((a, b) => Number(Boolean(b.project)) - Number(Boolean(a.project)) || b.latest - a.latest);
-    for (const g of list) g.rows = chainRows(g.rows, settings.links);
     const order = (r: Row) => settings.pinned.indexOf(r.key);
-    return { groups: list, archivedRows: chainRows(archived, settings.links), pinnedRows: pinned.sort((a, b) => order(a) - order(b)) };
+    return { groups: list, archivedRows: archived, pinnedRows: pinned.sort((a, b) => order(a) - order(b)) };
   }, [sessions, threads, search, worktrees, settings]);
 
   const runningIds = useMemo(
@@ -837,32 +801,9 @@ export function Sidebar() {
         <ChatRow
           row={r}
           active={isActive(r)}
-          running={runningIds.has(r.key)}
+          running={r.thread?.status === 'running' || runningIds.has(r.key)}
           archived={archived}
-          chainOpen={openChains[r.key]}
-          onToggleChain={() => setOpenChains((x) => ({ ...x, [r.key]: !x[r.key] }))}
         />
-        <AnimatePresence initial={false}>
-          {r.older && openChains[r.key] && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              style={{ overflow: 'hidden' }}
-            >
-              {r.older.map((o, i) => (
-                <ChatRow
-                  key={o.key}
-                  row={o}
-                  part={r.older!.length - i}
-                  active={isActive(o)}
-                  running={runningIds.has(o.key)}
-                  archived={archived}
-                />
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     ));
 

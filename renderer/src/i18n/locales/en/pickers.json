@@ -1,4 +1,7 @@
 {
+  "cliRules": "CLI rules",
+  "cliModeHint": "Uses the selected {name} CLI mode. Actions requiring manual approval are denied in Duet.",
+  "cliPermissions": "{name} CLI controls permissions. Actions needing approval are denied because the CLI cannot forward approval requests to Duet. Workspace files follow CLI policy.",
   "permTitle": "How should {name} ask for approval?",
   "reset": "Reset",
   "chooseModel": "Choose model",

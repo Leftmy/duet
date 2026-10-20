@@ -26,6 +26,18 @@ export function findFile(sessionId, cwd) {
 
 let cache = null; // { file, mtimeMs, size, index }
 
+/** The SDK preserves the active message chain but omits timestamps needed to interleave providers. */
+export async function withRecordedTimestamps(messages, sessionId, cwd) {
+  try {
+    const file = findFile(sessionId, cwd);
+    if (!file) return messages;
+    const { nodes } = await indexFile(file);
+    return messages.map((m) => ({ ...m, timestamp: nodes.get(m.uuid)?.msg?.timestamp ?? m.timestamp }));
+  } catch {
+    return messages;
+  }
+}
+
 async function indexFile(file) {
   const st = await fs.promises.stat(file);
   if (cache && cache.file === file && cache.mtimeMs === st.mtimeMs && cache.size === st.size) return cache.index;

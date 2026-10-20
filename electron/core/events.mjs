@@ -35,6 +35,7 @@ const SHAPES = {
 /** null when the event is well-formed, else what is wrong with it. */
 export function validateEvent(ev) {
   if (!ev || typeof ev !== 'object') return 'not an object';
+  if (ev.timestamp !== undefined && !Number.isFinite(ev.timestamp)) return 'invalid timestamp';
   const shape = SHAPES[ev.type];
   if (!shape) return `unknown type ${JSON.stringify(ev.type)}`;
   for (const [field, check] of Object.entries(shape)) if (!check(ev[field])) return `${ev.type}.${field} is ${JSON.stringify(ev[field])}`;

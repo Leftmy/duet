@@ -18,7 +18,8 @@ import type {
 } from './types';
 import type { ProviderProbe } from './desk';
 import { applyAgentTranscripts, applyEvent, fromHistory } from './lib/reduce';
-import { buildHandoff } from './lib/handoff';
+import { buildHandoff, unseenEntries } from './lib/handoff';
+import { linkedSessionIds, threadSessionIds } from './lib/chat-sessions';
 import { basename, uid } from './lib/format';
 import { askConfirm } from './lib/dialog';
 import { setLang, t as tr, type Lang } from './i18n';
@@ -33,6 +34,8 @@ interface Settings {
   providerModels: Partial<Record<ProviderId, { model: string; effort: Effort }>>;
   /** Chats that moved between agents: session id → the session it continues (another agent's). */
   links: Record<string, string>;
+  /** Selected provider of a logical chat, including switches made before sending a message. */
+  chatProviders: Record<string, ProviderId>;
   /** Sessions of agents that worked for another chat (run_agent); shown under that chat, not as chats. */
   subSessions: string[];
   /** Agents panel shows only the list of agents (their conversations hidden). */
@@ -87,6 +90,7 @@ interface State {
   commands: SlashCommand[];
   mcp: { name: string; status: string; scope?: string; tools: number }[];
   settingsOpen: boolean;
+  settingsSection?: string;
   zoomImage: string | null;
   /** Split view: two thread ids shown side by side (active one is focused). */
   split: string[] | null;
@@ -180,6 +184,7 @@ const DEFAULT_SETTINGS: Settings = {
   provider: 'claude',
   providerModels: {},
   links: {},
+  chatProviders: {},
   subSessions: [],
   agentsCollapsed: false,
   model: 'default',
@@ -254,16 +259,39 @@ function blankThread(s: Settings, cwd?: string, projectId?: string): Thread {
   };
 }
 
-/** Plan limits as providers report them: { plan, session, weekly }, pct 0–100, resetsAt in ms. */
+/** Plan limits as providers report them: { plan, session, weekly, groups }, pct 0–100, resetsAt in ms. */
 function toUsage(u: any): UsageSummary {
-  const win = (w: any) => (w && typeof w.pct === 'number' ? { pct: w.pct, resetsAt: w.resetsAt ?? null } : undefined);
-  return { plan: u?.plan ?? null, session: win(u?.session), weekly: win(u?.weekly) };
+  const win = (w: any) =>
+    w && typeof w.pct === 'number'
+      ? { pct: w.pct, resetsAt: w.resetsAt ?? null, ...(w.label ? { label: String(w.label) } : {}) }
+      : undefined;
+  const groups = Array.isArray(u?.groups)
+    ? u.groups
+        .map((g: any) => ({
+          name: String(g?.name ?? 'Models'),
+          ...(g?.description ? { description: String(g.description) } : {}),
+          ...(win(g?.session) ? { session: win(g.session) } : {}),
+          ...(win(g?.weekly) ? { weekly: win(g.weekly) } : {}),
+        }))
+        .filter((g: any) => g.session || g.weekly)
+    : undefined;
+  return {
+    plan: u?.plan ?? null,
+    ...(u?.email ? { email: String(u.email) } : {}),
+    session: win(u?.session),
+    weekly: win(u?.weekly),
+    ...(groups?.length ? { groups } : {}),
+  };
 }
 
 
+// Zustand selectors must return the same reference until the models actually change.
+// A new [] while a provider is loading causes React to loop and unmount the app.
+const NO_MODELS: ModelInfo[] = [];
+
 /** Models of an agent (Claude's come from the main probe). */
 export const modelsOf = (s: { models: ModelInfo[]; providers: Record<string, ProviderProbe> }, provider: ProviderId): ModelInfo[] =>
-  provider === 'claude' ? s.models : (s.providers[provider]?.models as ModelInfo[]) ?? [];
+  provider === 'claude' ? s.models : (s.providers[provider]?.models as ModelInfo[]) ?? NO_MODELS;
 
 /**
  * Merges a freshly read session into the feed: everything after the last user message both have is
@@ -296,25 +324,6 @@ let sessionsTimer: ReturnType<typeof setTimeout> | undefined;
 let lastUsageAt = 0;
 
 export const useStore = create<State>()((set, get) => {
-  /** Adds earlier in-file segments (context compactions) of every chain file as previous parts. */
-  const expandChain = async (id: string) => {
-    const t = get().threads[id];
-    if (!t?.sessionId || t.chainExpanded || (t.chainLoaded ?? 0) > 0) return;
-    const files: SessionInfo[] = [
-      { sessionId: t.sessionId, provider: t.provider, title: t.title, cwd: t.cwd, lastModified: Date.now() },
-      ...(t.chain ?? []).filter((p) => p.segment == null),
-    ];
-    const lists = await Promise.all(files.map((f) => window.desk.segments(f.sessionId, f.cwd, f.provider).catch(() => [])));
-    const chain: SessionInfo[] = [];
-    files.forEach((f, i) => {
-      if (i > 0) chain.push(f);
-      for (const s of lists[i]) chain.push({ ...f, segment: s.segment, lastModified: Date.parse(s.ts) || f.lastModified });
-    });
-    update(id, (x) =>
-      (x.chainLoaded ?? 0) > 0 || x.chainExpanded ? x : { ...x, chainExpanded: true, ...(chain.length ? { chain, chainLoaded: 0 } : {}) },
-    );
-  };
-
   const update = (id: string, fn: (t: Thread) => Thread) =>
     set((s) => (s.threads[id] ? { threads: { ...s.threads, [id]: fn(s.threads[id]) } } : s));
 
@@ -344,12 +353,12 @@ export const useStore = create<State>()((set, get) => {
     if (!t) return;
     update(id, (x) => ({ ...x, sessions: { ...(x.sessions ?? {}), [x.provider]: sessionId } }));
     // Continues another agent's session: link the two so the sidebar shows one chat with one title.
-    const lastOther = [...before.entries].reverse().find((e) => e.kind === 'turn' && e.provider && e.provider !== t.provider);
-    const prev = lastOther?.kind === 'turn' && lastOther.provider ? before.sessions?.[lastOther.provider] : undefined;
+    const prev = Object.entries(before.sessions ?? {}).find(([provider, sid]) => provider !== t.provider && sid !== sessionId)?.[1];
     const s = get().settings;
-    if (!prev || s.links[sessionId]) return;
+    if (!prev) return;
     persist({
-      links: { ...s.links, [sessionId]: prev },
+      links: linkedSessionIds(sessionId, s.links).has(prev) ? s.links : { ...s.links, [sessionId]: prev },
+      chatProviders: { ...s.chatProviders, [sessionId]: t.provider },
       ...(s.chatProject[prev] ? { chatProject: { ...s.chatProject, [sessionId]: s.chatProject[prev] } } : {}),
     });
     // The new session keeps the chat's title; set once the turn ends (its file may not exist yet).
@@ -384,9 +393,12 @@ export const useStore = create<State>()((set, get) => {
             entries: t.entries,
             from: t.handoff.from,
             to: t.provider,
+            resume: t.handoff.resume ?? Boolean(t.sessionId),
             cwd: t.cwd,
             label,
             changes: status?.files.map((f) => `${f.status[0].toUpperCase()} ${f.path}`),
+            agents: Object.values(t.agents),
+            tasks: Object.values(t.tasks),
             summarize: (text) => window.desk.call<string>('desk:summarize', text),
           })) ?? undefined;
       } catch {}
@@ -518,7 +530,12 @@ export const useStore = create<State>()((set, get) => {
         if (ev.type === 'limits') {
           const provider = ev.provider ?? get().threads[threadId]?.provider ?? 'claude';
           const patch = toUsage(ev);
-          const merge = (u: UsageSummary = {}) => ({ ...u, ...(patch.session ? { session: patch.session } : {}), ...(patch.weekly ? { weekly: patch.weekly } : {}) });
+          const merge = (u: UsageSummary = {}) => ({
+            ...u,
+            ...(patch.session ? { session: patch.session } : {}),
+            ...(patch.weekly ? { weekly: patch.weekly } : {}),
+            ...(patch.groups ? { groups: patch.groups } : {}),
+          });
           set((s) => ({
             usageBy: { ...s.usageBy, [provider]: merge(s.usageBy[provider]) },
             ...(provider === 'claude' ? { usage: merge(s.usage) } : {}),
@@ -698,49 +715,53 @@ export const useStore = create<State>()((set, get) => {
       return t.id;
     },
 
-    openSession(info, chain) {
+    openSession(info) {
       const s = get();
-      if (!isDetachedWindow() && s.detached.includes(info.sessionId)) {
-        window.desk.call('win:focus', info.sessionId).catch(() => {});
-        return;
-      }
-      const existing = Object.values(s.threads).find((t) => t.sessionId === info.sessionId || t.id === info.sessionId);
+      const aliases = linkedSessionIds(info.sessionId, s.settings.links);
+      const existing = Object.values(s.threads).find((t) => threadSessionIds(t).some((id) => aliases.has(id)));
       if (existing) {
         set({ activeId: existing.id });
-        if (chain?.length && !existing.chain) update(existing.id, (x) => ({ ...x, chain, chainLoaded: 0 }));
-        if (existing.loaded && !existing.loading) expandChain(existing.id);
         return;
       }
-      const provider = info.provider ?? 'claude';
-      // Earlier parts of a chat that moved between agents: remember each agent's latest session.
+      const detached = s.detached.find((id) => aliases.has(id));
+      if (!isDetachedWindow() && detached) {
+        window.desk.call('win:focus', detached).catch(() => {});
+        return;
+      }
+      const members = [...new Map([info, ...s.sessions.filter((x) => aliases.has(x.sessionId))].map((x) => [x.sessionId, x])).values()]
+        .sort((a, b) => b.lastModified - a.lastModified);
+      const latest = members[0];
+      const provider = s.settings.chatProviders[latest.sessionId] ?? latest.provider ?? 'claude';
       const sessions: Partial<Record<ProviderId, string>> = {};
-      for (const p of [...(chain ?? [])].reverse()) if (p.segment == null) sessions[p.provider ?? 'claude'] = p.sessionId;
-      sessions[provider] = info.sessionId;
+      for (const part of [...members].reverse()) sessions[part.provider ?? 'claude'] = part.sessionId;
       const t: Thread = {
-        ...blankThread(s.settings, info.cwd),
+        ...blankThread(s.settings, latest.cwd),
         ...agentDefaults(s.settings, provider),
-        provider,
-        sessions,
-        id: info.sessionId,
-        sessionId: info.sessionId,
-        title: info.title,
-        ...(chain?.length ? { chain, chainLoaded: 0 } : {}),
-        loaded: false,
-        loading: true,
-        ...(s.worktrees[info.cwd.toLowerCase()] ? { workMode: 'worktree' as const, worktree: s.worktrees[info.cwd.toLowerCase()] } : {}),
+        provider, sessions, id: latest.sessionId, sessionId: sessions[provider], title: latest.title,
+        loaded: false, loading: true,
+        ...(s.worktrees[latest.cwd.toLowerCase()] ? { workMode: 'worktree' as const, worktree: s.worktrees[latest.cwd.toLowerCase()] } : {}),
       };
       set({ threads: { ...s.threads, [t.id]: t }, activeId: t.id });
-      window.desk
-        .loadSession(info.sessionId, info.cwd, undefined, t.provider)
-        .then((events) => {
-          const { entries, agents } = fromHistory(events, t.provider);
-          update(t.id, (x) => ({ ...x, entries, agents, loaded: true, loading: false }));
-          expandChain(t.id);
-        })
-        .catch((e) => {
-          update(t.id, (x) => ({ ...x, loaded: true, loading: false }));
-          get().toast(tr('store.historyFailed', { error: e?.message ?? e }), 'error');
-        });
+      Promise.all(members.map(async (part) => ({
+        ...fromHistory(await window.desk.loadSession(part.sessionId, part.cwd, undefined, part.provider), part.provider ?? 'claude'),
+        part,
+      }))).then((histories) => {
+        const entries = histories.flatMap((h) => h.entries).sort((a, b) =>
+          (a.kind === 'user' ? a.ts : a.startedAt) - (b.kind === 'user' ? b.ts : b.startedAt));
+        const agents = Object.assign({}, ...histories.map((h) => h.agents));
+        const last = [...entries].reverse().find((e) => e.kind === 'turn');
+        update(t.id, (x) => ({
+          ...x, entries, agents, loaded: true, loading: false,
+          ...(last?.kind === 'turn' && last.provider && last.provider !== provider ? { handoff: { from: last.provider } } : {}),
+        }));
+        // Compactions are earlier history inside a session, not separate chat branches.
+        Promise.all(members.map(async (part) => (await window.desk.segments(part.sessionId, part.cwd, part.provider).catch(() => []))
+          .map((segment) => ({ ...part, segment: segment.segment, lastModified: Date.parse(segment.ts) || part.lastModified }))
+        )).then((parts) => update(t.id, (x) => ({ ...x, chain: parts.flat().sort((a, b) => b.lastModified - a.lastModified), chainLoaded: 0, chainExpanded: true })));
+      }).catch((e) => {
+        update(t.id, (x) => ({ ...x, loaded: true, loading: false }));
+        get().toast(tr('store.historyFailed', { error: e?.message ?? e }), 'error');
+      });
     },
 
     async loadEarlierPart(id, all) {
@@ -790,14 +811,18 @@ export const useStore = create<State>()((set, get) => {
 
     send(id, text, images) {
       const t = get().threads[id];
-      if (!t || (!text.trim() && !images.length)) return;
+      if (!t || t.loading || (!text.trim() && !images.length)) return;
+      if (images.length && get().providers[t.provider]?.caps?.images === false) {
+        get().toast(tr('composer.imagesUnsupported', { name: get().providers[t.provider]?.label ?? t.provider }), 'error');
+        return;
+      }
       if (t.worktree?.removed) {
         get().toast(tr('store.worktreeGone'), 'error');
         return;
       }
       update(id, (x) => ({ ...x, draft: '', draftImages: [] }));
       if (t.status === 'running') {
-        if (get().settings.followUp === 'steer') {
+        if (get().settings.followUp === 'steer' && get().providers[t.provider]?.caps?.steer !== false) {
           // Fold into the running turn: Claude picks it up at the next step without stopping.
           const uuid = crypto.randomUUID();
           update(id, (x) => {
@@ -855,9 +880,9 @@ export const useStore = create<State>()((set, get) => {
         const { entries: fresh, agents } = fromHistory(events, t.provider);
         const cur = get().threads[id];
         if (!cur || cur.status === 'running' || cur.sessionId !== t.sessionId) return;
-        // A chat that went through several agents only takes additions, never a wholesale replace (unless asked).
+        // A chat that went through several agents only takes additions, never a wholesale replace.
         const multiAgent = cur.entries.some((e) => e.kind === 'turn' && e.provider && e.provider !== cur.provider);
-        const merged = mergeFromDisk(cur.entries, fresh, manual || !multiAgent);
+        const merged = mergeFromDisk(cur.entries, fresh, !multiAgent);
         if (!merged) {
           if (manual) get().toast(tr('store.syncNothing'));
           return;
@@ -873,7 +898,7 @@ export const useStore = create<State>()((set, get) => {
 
     switchProvider(id, provider) {
       const t = get().threads[id];
-      if (!t || t.provider === provider) return;
+      if (!t || t.loading || t.provider === provider) return;
       if (t.status === 'running') return get().toast(tr('store.switchWhileRunning'), 'error');
       const def = agentDefaults(get().settings, provider);
       const levels = modelsOf(get(), provider).find((m) => m.value === def.model)?.supportedEffortLevels;
@@ -900,14 +925,21 @@ export const useStore = create<State>()((set, get) => {
           sessions,
           // Back on an agent that already worked here: continue its own session.
           sessionId: sessions[provider],
-          handoff: { from: t.provider },
+          handoff: { from: t.handoff?.from ?? t.provider },
+          context: undefined,
+          activity: undefined,
+          agents: Object.fromEntries(Object.entries(x.agents).map(([key, a]) => [key, a.status === 'running' ? { ...a, status: 'stopped', endedAt: Date.now() } : a])),
+          tasks: Object.fromEntries(Object.entries(x.tasks).map(([key, task]) => [key, task.status === 'running' || task.status === 'pending' ? { ...task, status: 'stopped', endedAt: Date.now() } : task])),
           // Every session of the chat carries the chat's title.
           retitle: !isDefaultTitle(x.title),
           approvals: [],
         };
       });
-      // The next message starts the new agent; the old one's process can go now.
-      window.desk.closeThread(id).catch(() => {});
+      const aliases = threadSessionIds(get().threads[id]).flatMap((key) => [...linkedSessionIds(key, get().settings.links)]);
+      persist({ chatProviders: { ...get().settings.chatProviders, ...Object.fromEntries(aliases.map((key) => [key, provider])) } });
+      // Release only the provider run; the chat, browser, draft and history retain their identity.
+      window.desk.call('desk:switch-provider', { threadId: id, provider, resume: sessions[provider] })
+        .catch((e) => get().toast(String(e?.message ?? e), 'error'));
     },
 
     setPermissionMode(id, permissionMode) {
@@ -1119,6 +1151,7 @@ export const useStore = create<State>()((set, get) => {
     },
 
     openRewind(threadId, entryId) {
+      if (get().providers[get().threads[threadId]?.provider]?.caps?.rollback === false) return;
       set({ rewindDialog: { threadId, entryId } });
     },
 
@@ -1128,7 +1161,6 @@ export const useStore = create<State>()((set, get) => {
       const idx = t.entries.findIndex((e) => e.id === entryId);
       const entry = t.entries[idx];
       if (!entry || entry.kind !== 'user') return;
-      const prevTurn = [...t.entries.slice(0, idx)].reverse().find((e) => e.kind === 'turn');
       const config = { provider: t.provider, cwd: t.cwd, model: t.model, effort: effortFor(t), permissionMode: t.permissionMode, resume: t.sessionId };
       const done: string[] = [];
       try {
@@ -1142,17 +1174,51 @@ export const useStore = create<State>()((set, get) => {
           done.push(res.filesChanged?.length ? tr('store.rewoundCodeFiles', { count: res.filesChanged.length }) : tr('store.rewoundCode'));
         }
         if (mode === 'both' || mode === 'conversation') {
-          const byTurns = get().providers[t.provider]?.caps?.rollback === 'turns';
+          const kept = t.entries.slice(0, idx);
+          const dropped = t.entries.slice(idx);
+          const journalBacked = t.provider === 'antigravity' || t.provider === 'gemini';
+          const byTurns = journalBacked || get().providers[t.provider]?.caps?.rollback === 'turns';
           // Agents that drop whole turns: count this agent's turns from the rewound message on.
-          const dropTurns = t.entries.slice(idx).filter((e) => e.kind === 'turn' && (e.provider ?? t.provider) === t.provider).length;
-          const resumeAt = byTurns ? null : prevTurn && prevTurn.kind === 'turn' ? prevTurn.lastUuid ?? null : null;
-          if (!byTurns && idx > 0 && !resumeAt) throw new Error(tr('store.noResumePoint'));
+          const dropTurns = dropped.filter((e) => e.kind === 'turn' && (e.provider ?? t.provider) === t.provider).length;
+          const prevOwnTurn = [...kept].reverse().find((e) => e.kind === 'turn' && (e.provider ?? t.provider) === t.provider);
+          const keepSession = journalBacked
+            ? Boolean(t.sessionId)
+            : byTurns
+              ? Boolean(prevOwnTurn && t.sessionId)
+              : Boolean(prevOwnTurn && prevOwnTurn.kind === 'turn' && prevOwnTurn.lastUuid && t.sessionId);
+          const resumeAt = byTurns ? (keepSession ? null : false) : keepSession && prevOwnTurn?.kind === 'turn' ? prevOwnTurn.lastUuid ?? null : null;
           await window.desk.rewindConversation({ threadId: id, resumeAt, dropTurns, sessionId: t.sessionId, provider: t.provider });
-          const keepSession = byTurns ? t.entries.slice(0, idx).some((e) => e.kind === 'turn' && (e.provider ?? t.provider) === t.provider) : Boolean(resumeAt);
+          const sessions: Partial<Record<ProviderId, string>> = { ...(t.sessions ?? {}), ...(t.sessionId ? { [t.provider]: t.sessionId } : {}) };
+          if (!keepSession) delete sessions[t.provider];
+          for (const [pId, sid] of Object.entries(sessions) as [ProviderId, string][]) {
+            if (!sid || pId === t.provider) continue;
+            const otherDropped = dropped.filter((e) => e.kind === 'turn' && (e.provider ?? t.provider) === pId).length;
+            const otherKept = kept.some((e) => e.kind === 'turn' && (e.provider ?? t.provider) === pId);
+            const otherJournal = pId === 'antigravity' || pId === 'gemini';
+            const otherByTurns = otherJournal || get().providers[pId]?.caps?.rollback === 'turns';
+            if (otherDropped > 0) {
+              if (otherByTurns) await window.desk.rewindConversation({ threadId: id, dropTurns: otherDropped, sessionId: sid, provider: pId });
+              else delete sessions[pId];
+            }
+            if (!otherKept && !otherJournal) delete sessions[pId];
+          }
+          const nativeResumed = keepSession && !(journalBacked && dropTurns > 0) && Boolean(prevOwnTurn);
+          const lastKeptTurn = [...kept].reverse().find((e) => e.kind === 'turn');
+          const handoffFrom = (lastKeptTurn?.kind === 'turn' ? lastKeptTurn.provider : undefined) ?? t.handoff?.from ?? t.provider;
+          const nextHandoff =
+            kept.length === 0
+              ? undefined
+              : !nativeResumed
+                ? { from: handoffFrom, resume: false }
+                : unseenEntries(kept, t.provider).entries.length > 0
+                  ? { from: handoffFrom, resume: true }
+                  : undefined;
           update(id, (x) => ({
             ...x,
-            entries: x.entries.slice(0, idx),
+            entries: kept,
+            sessions,
             ...(keepSession ? {} : { sessionId: undefined }),
+            handoff: nextHandoff,
             rewound: true,
             status: 'idle',
             approvals: [],
@@ -1170,7 +1236,7 @@ export const useStore = create<State>()((set, get) => {
     },
     async forkFrom(id, uuid) {
       const t = get().threads[id];
-      if (!t?.sessionId) return;
+      if (!t?.sessionId || get().providers[t.provider]?.caps?.fork === false) return;
       try {
         const sessionId = await window.desk.fork({ sessionId: t.sessionId, cwd: t.cwd, uuid, provider: t.provider });
         await get().refreshSessions();
@@ -1252,14 +1318,17 @@ export const useStore = create<State>()((set, get) => {
       if (t && agentId && t.agents[agentId]?.historical && !t.agents[agentId].transcriptLoaded) get().loadAgentTranscripts(t.id);
     },
 
-    loadAgentTranscripts(id) {
+    async loadAgentTranscripts(id) {
       const t = get().threads[id];
-      if (!t?.sessionId) return;
-      update(id, (x) => ({ ...x, agents: Object.fromEntries(Object.entries(x.agents).map(([k, a]) => [k, { ...a, transcriptLoaded: true }])) }));
-      window.desk
-        .loadSubagents(t.sessionId, t.cwd, t.provider)
-        .then((events) => update(id, (x) => ({ ...x, agents: applyAgentTranscripts(x.agents, events) })))
-        .catch((e) => get().toast(tr('store.agentsFailed', { error: e?.message ?? e }), 'error'));
+      if (!t) return;
+      const sessions = { ...(t.sessions ?? {}), ...(t.sessionId ? { [t.provider]: t.sessionId } : {}) };
+      try {
+        const batches = await Promise.all(Object.entries(sessions).map(([provider, sessionId]) =>
+          window.desk.loadSubagents(sessionId!, t.cwd, provider as ProviderId)));
+        update(id, (x) => ({ ...x, agents: batches.reduce((agents, events) => applyAgentTranscripts(agents, events), x.agents) }));
+      } catch (e: any) {
+        get().toast(tr('store.agentsFailed', { error: e?.message ?? e }), 'error');
+      }
     },
 
     setSearch(search) {

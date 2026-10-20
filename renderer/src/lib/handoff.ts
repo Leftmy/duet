@@ -1,7 +1,7 @@
 // Context handoff between agents: when a chat moves from one agent to another, the new agent gets
 // the conversation (or what happened since it last worked here) as extra system instructions.
 // Built from the provider-neutral feed, so it works the same for any pair of agents.
-import type { Entry, ProviderId, ToolItem, Turn } from '../types';
+import type { AgentRun, BgTask, Entry, ProviderId, ToolItem, Turn } from '../types';
 import { diffStats, toolDiff, toolKind, toolSummary } from './tools';
 
 /** Transcript budget; older turns beyond it are summarized (or cut when summarizing fails). */
@@ -76,14 +76,22 @@ export interface HandoffInput {
   label: (p?: ProviderId) => string;
   /** Uncommitted changes in the working directory, e.g. "M src/app.ts". */
   changes?: string[];
+  agents?: AgentRun[];
+  tasks?: BgTask[];
+  /** False for a fresh provider session, even when copied history includes that provider. */
+  resume?: boolean;
   /** Summarizes an older part of the transcript (a quick model call); may throw. */
   summarize?: (text: string) => Promise<string>;
 }
 
 /** The instructions text handed to the agent that takes over the chat; null when there is nothing to hand over. */
-export async function buildHandoff({ entries, from, to, cwd, label, changes, summarize }: HandoffInput): Promise<string | null> {
-  const { entries: unseen, resumed } = unseenEntries(entries, to);
+export async function buildHandoff({ entries, from, to, cwd, label, changes, agents = [], tasks = [], resume, summarize }: HandoffInput): Promise<string | null> {
+  const { entries: unseen, resumed } = resume === false ? { entries, resumed: false } : unseenEntries(entries, to);
   const blocks = transcript(unseen, label);
+  if (agents.length) blocks.push('## Subagent work\n' + agents.map((a) =>
+    `- ${a.name} (${a.status})\n  Task: ${clip(a.prompt, 1000)}\n  Result: ${clip(a.result || a.items.filter((i) => i.kind === 'text').map((i) => i.text).join('\n'), 3000)}`
+  ).join('\n') + '\nThese are prior work records, not live agents you can address. Continue unfinished work or start your own helpers as needed.');
+  if (tasks.length) blocks.push('## Task state\n' + tasks.map((task) => `- ${task.description} (${task.status})${task.summary ? ': ' + clip(task.summary, 1000) : ''}`).join('\n'));
   if (!blocks.length) return null;
 
   let body = blocks.join('\n\n');
@@ -104,9 +112,11 @@ export async function buildHandoff({ entries, from, to, cwd, label, changes, sum
   const fromName = label(from);
   return [
     '<context_handoff>',
-    resumed
-      ? `You worked in this chat before. While you were away the user continued it with another coding agent (${fromName}), and has now switched back to you. Below is what happened since your last turn.`
-      : `The user started this chat with another coding agent (${fromName}) and has now switched to you. Below is the conversation so far.`,
+    from === to
+      ? 'This conversation was rewound to an earlier point. Below is the conversation up to the rewind point.'
+      : resumed
+        ? `You worked in this chat before. While you were away the user continued it with another coding agent (${fromName}), and has now switched back to you. Below is what happened since your last turn.`
+        : `The user started this chat with another coding agent (${fromName}) and has now switched to you. Below is the conversation so far.`,
     'Treat it as your own prior context: continue seamlessly from where it stopped, do not redo finished steps, and do not mention the switch unless the user asks. ' +
       'Files in the working directory already contain the changes described.',
     '',

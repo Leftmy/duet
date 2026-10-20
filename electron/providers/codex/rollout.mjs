@@ -155,7 +155,7 @@ export function rolloutEvents(file) {
               return data ? { id: `img-${seq}-${i}`, mediaType, data } : null;
             })
             .filter(Boolean);
-          cur.push({ type: 'user', text: readableUserText(p.message).trim(), images });
+          cur.push({ type: 'user', text: readableUserText(p.message).trim(), images, timestamp: Date.parse(rec.timestamp) || undefined });
           break;
         }
         case 'turn_aborted':
@@ -275,7 +275,7 @@ function recordedEvents(text) {
         if (item.type === 'userMessage') {
           open();
           const { text: t, images } = userInputText(item.content);
-          cur.push({ type: 'user', text: t.trim(), images });
+          cur.push({ type: 'user', text: t.trim(), images, timestamp: Date.parse(rec.timestamp) || undefined });
         } else if (!(item.type === 'reasoning' && !item.summary?.length)) cur.push(...itemEvents(item, 'end'));
         break;
       }

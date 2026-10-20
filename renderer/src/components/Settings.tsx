@@ -5,8 +5,8 @@ import { InstructionsSection } from '../features/instructions/InstructionsSectio
 import { CommandsSection } from '../features/commands/CommandsSection';
 import { SchedulesSection, TelegramSection } from '../features/schedule/SchedulesSection';
 import { useStore } from '../store';
-import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel } from '../lib/format';
-import type { Effort, PermMode, ThemePref, ProviderId } from '../types';
+import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel, resetTime } from '../lib/format';
+import type { Effort, LimitWindow, PermMode, ThemePref, ProviderId } from '../types';
 import type { ProviderProbe } from '../desk';
 import { AgentMark } from './AgentMark';
 import { spring } from './Popover';
@@ -14,6 +14,11 @@ import { LANGS, t, type Lang } from '../i18n';
 import { AboutSection, McpManager, SkillsList, StatsView } from './SettingsExtra';
 
 type Section = 'general' | 'defaults' | 'claude' | 'instr' | 'commands' | 'mcp' | 'skills' | 'schedule' | 'telegram' | 'stats' | 'keys' | 'about';
+
+const fmtLimit = (w: LimitWindow) => {
+  const rst = resetTime(w.resetsAt);
+  return rst ? `${Math.round(w.pct)}% (${t('sidebar.resets', { time: rst })})` : `${Math.round(w.pct)}%`;
+};
 
 const SECTIONS: { id: Section; label: string; icon: typeof User }[] = [
   { id: 'general', get label() { return t('settings.nav_general'); }, icon: SlidersHorizontal },
@@ -99,6 +104,7 @@ const KEYS: [string, string][] = [
 
 export function SettingsModal() {
   const open = useStore((s) => s.settingsOpen);
+  const requestedSection = useStore((s) => s.settingsSection);
   const settings = useStore((s) => s.settings);
   const models = useStore((s) => s.models);
   const account = useStore((s) => s.account);
@@ -108,7 +114,18 @@ export function SettingsModal() {
   const mcp = useStore((s) => s.mcp);
   const setSettings = useStore((s) => s.setSettings);
   const [section, setSection] = useState<Section>('general');
-  const close = () => useStore.setState({ settingsOpen: false });
+  const close = () => useStore.setState({ settingsOpen: false, settingsSection: undefined });
+
+  useEffect(() => {
+    if (open && requestedSection) {
+      setSection(requestedSection as Section);
+      useStore.setState({ settingsSection: undefined });
+    }
+  }, [open, requestedSection]);
+
+  useEffect(() => {
+    if (open && section === 'claude') useStore.getState().refreshUsage();
+  }, [open, section]);
 
   useEffect(() => {
     if (!open) return;
@@ -253,12 +270,12 @@ export function SettingsModal() {
                       </Row>
                       {usage.session && (
                         <Row title={t('settings.sessionLimit')}>
-                          <span className="muted">{Math.round(usage.session.pct)}%</span>
+                          <span className="muted">{fmtLimit(usage.session)}</span>
                         </Row>
                       )}
                       {usage.weekly && (
                         <Row title={t('settings.weeklyLimit')}>
-                          <span className="muted">{Math.round(usage.weekly.pct)}%</span>
+                          <span className="muted">{fmtLimit(usage.weekly)}</span>
                         </Row>
                       )}
                       <h3>{t('settings.browser')}</h3>
@@ -282,20 +299,37 @@ export function SettingsModal() {
                             {p.available ? (
                               <>
                                 <Row title={t('settings.account')}>
-                                  <span className="muted">{p.account?.email ?? '—'}</span>
+                                  <span className="muted">{p.account?.email ?? usageBy[id]?.email ?? '—'}</span>
                                 </Row>
                                 <Row title={t('settings.subscription')}>
-                                  <span className="muted">{p.account?.subscriptionType ?? '—'}</span>
+                                  <span className="muted">{p.account?.subscriptionType ?? usageBy[id]?.plan ?? '—'}</span>
                                 </Row>
-                                {usageBy[id]?.session && (
-                                  <Row title={t('settings.sessionLimit')}>
-                                    <span className="muted">{Math.round(usageBy[id]!.session!.pct)}%</span>
-                                  </Row>
-                                )}
-                                {usageBy[id]?.weekly && (
-                                  <Row title={t('settings.weeklyLimit')}>
-                                    <span className="muted">{Math.round(usageBy[id]!.weekly!.pct)}%</span>
-                                  </Row>
+                                {usageBy[id]?.groups?.length ? (
+                                  usageBy[id]!.groups!.map((g) => (
+                                    <Row key={g.name} title={g.name} hint={g.description}>
+                                      <span className="muted">
+                                        {[
+                                          g.session ? `${t('sidebar.usageSessionShort')}: ${fmtLimit(g.session)}` : null,
+                                          g.weekly ? `${t('sidebar.usageWeekShort')}: ${fmtLimit(g.weekly)}` : null,
+                                        ]
+                                          .filter(Boolean)
+                                          .join(' · ')}
+                                      </span>
+                                    </Row>
+                                  ))
+                                ) : (
+                                  <>
+                                    {usageBy[id]?.session && (
+                                      <Row title={t('settings.sessionLimit')}>
+                                        <span className="muted">{fmtLimit(usageBy[id]!.session!)}</span>
+                                      </Row>
+                                    )}
+                                    {usageBy[id]?.weekly && (
+                                      <Row title={t('settings.weeklyLimit')}>
+                                        <span className="muted">{fmtLimit(usageBy[id]!.weekly!)}</span>
+                                      </Row>
+                                    )}
+                                  </>
                                 )}
                                 <Row title={t('settings.version')}>
                                   <span className="muted">{p.version ?? '—'}</span>
@@ -340,4 +374,4 @@ export function SettingsModal() {
   );
 }
 
-export const openSettings = () => useStore.setState({ settingsOpen: true });
+export const openSettings = (section?: Section) => useStore.setState({ settingsOpen: true, ...(section ? { settingsSection: section } : {}) });

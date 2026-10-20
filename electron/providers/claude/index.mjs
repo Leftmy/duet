@@ -16,7 +16,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { findFile, listSegments, loadSegment } from '../../segments.mjs';
+import { findFile, listSegments, loadSegment, withRecordedTimestamps } from '../../segments.mjs';
 import { runTool } from '../../core/tools.mjs';
 import { t as tr } from '../../i18n.mjs';
 import { createTranslator, historyEvents, subagentEvents } from './translate.mjs';
@@ -412,7 +412,8 @@ export function createClaudeProvider({ stats, log = () => {} }) {
 
     /** A saved session as desk events; segment = an earlier part before an in-file compaction. */
     async loadHistory(sessionId, cwd, segment) {
-      const msgs = segment != null ? await loadSegment(sessionId, cwd, segment) : await getSessionMessages(sessionId, dirOpt(cwd));
+      const msgs = segment != null ? await loadSegment(sessionId, cwd, segment)
+        : await withRecordedTimestamps(await getSessionMessages(sessionId, dirOpt(cwd)), sessionId, cwd);
       return historyEvents(msgs);
     },
 

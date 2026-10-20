@@ -1,4 +1,5 @@
 {
+  "imagesUnsupported": "{name} пока принимает только текст. Удалите изображения перед отправкой.",
   "reviewComments_one": "{count} комментарий к коду",
   "reviewComments_few": "{count} комментария к коду",
   "reviewComments_many": "{count} комментариев к коду",

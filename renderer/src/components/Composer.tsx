@@ -26,7 +26,8 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   const removeQueued = useStore((s) => s.removeQueued);
   const commands = useStore((s) => (s.providers[thread.provider]?.caps?.slashCommands === false ? NO_COMMANDS : s.commands));
   const agentName = useStore((s) => s.providers[thread.provider]?.label ?? 'Claude');
-  const followUp = useStore((s) => s.settings.followUp);
+  const followUp = useStore((s) => s.providers[thread.provider]?.caps?.steer === false ? 'queue' : s.settings.followUp);
+  const supportsImages = useStore((s) => s.providers[thread.provider]?.caps?.images !== false);
   const review = useStore((s) => s.review[thread.id]);
   const sendReview = useStore((s) => s.sendReview);
   const clearReview = useStore((s) => s.clearReview);
@@ -85,6 +86,10 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   const mention = useMentions({ cwd: thread.cwd, text, setText, taRef, blocked: slash.length > 0 });
 
   const addFiles = async (files: FileList | File[]) => {
+    if (!supportsImages) {
+      useStore.getState().toast(t('composer.imagesUnsupported', { name: agentName }), 'error');
+      return;
+    }
     const list = Array.from(files).filter((f) => f.type.startsWith('image/'));
     const added = await Promise.all(list.map(fileToAttachment));
     setImages((cur) => [...cur, ...added.map((a) => ({ ...a, id: uid() }))]);
@@ -110,6 +115,10 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
 
   const submit = () => {
     if (!text.trim() && !images.length) return;
+    if (images.length && !supportsImages) {
+      useStore.getState().toast(t('composer.imagesUnsupported', { name: agentName }), 'error');
+      return;
+    }
     send(thread.id, text, images);
     setText('');
     setImages([]);
@@ -291,7 +300,7 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
         />
 
         <div className="composer-bar">
-          <button className="icon-btn" title={t('composer.attachImage')} onClick={() => fileRef.current?.click()}>
+          <button className="icon-btn" disabled={!supportsImages} title={supportsImages ? t('composer.attachImage') : t('composer.imagesUnsupported', { name: agentName })} onClick={() => fileRef.current?.click()}>
             <Plus size={17} />
           </button>
           <input

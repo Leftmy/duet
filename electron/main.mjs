@@ -6,6 +6,8 @@ import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeCli, createClaudeProvider } from './providers/claude/index.mjs';
 import { createCodexProvider } from './providers/codex/index.mjs';
+import { createAntigravityProvider } from './providers/antigravity/index.mjs';
+import { createGeminiProvider } from './providers/gemini/index.mjs';
 import { createRegistry } from './core/registry.mjs';
 import { createCore } from './core/runs.mjs';
 import { createFiles } from './files.mjs';
@@ -159,6 +161,8 @@ const stats = createStats(app.getPath('userData'));
 const registry = createRegistry();
 registry.register(createClaudeProvider({ stats, log: (...a) => console.log('[claude]', ...a) }));
 registry.register(createCodexProvider({ log: (...a) => console.log('[codex]', ...a) }));
+registry.register(createAntigravityProvider({ dataDir: app.getPath('userData'), log: (...a) => console.log('[antigravity]', ...a) }));
+registry.register(createGeminiProvider({ dataDir: app.getPath('userData'), log: (...a) => console.log('[gemini]', ...a) }));
 // Tools the app gives every agent: session helpers, the chat's own browser page and the other agents
 // (one level of delegation, so agents don't keep handing work to each other).
 const toolsFor = (key, { depth = 0 } = {}) => [sessionToolset(), browser.toolset(key), ...(depth < 1 ? [agentsToolset(core, key)] : [])];
@@ -250,6 +254,7 @@ handle('agent:renameSession', (sessionId, title, cwd, provider) => core.renameSe
 handle('agent:deleteSession', (sessionId, cwd, provider) => core.deleteSession(sessionId, cwd, provider));
 handle('agent:send', (payload) => core.send(payload));
 handle('agent:configure', (payload) => core.configure(payload));
+handle('desk:switch-provider', (payload) => core.switchProvider(payload));
 handle('agent:interrupt', (threadId) => core.interrupt(threadId));
 handle('agent:respondPermission', (payload) => core.respondPermission(payload));
 handle('agent:closeThread', (threadId) => core.closeThread(threadId));

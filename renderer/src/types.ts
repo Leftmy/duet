@@ -275,8 +275,8 @@ export interface Thread {
   provider: ProviderId;
   /** Latest session of every agent this chat has used (to resume one when switching back). */
   sessions?: Partial<Record<ProviderId, string>>;
-  /** Set when the chat just moved to another agent: the next message carries the conversation over. */
-  handoff?: { from: ProviderId };
+  /** Set when the chat just moved to another agent or rewound a session: the next message carries the conversation over. */
+  handoff?: { from: ProviderId; resume?: boolean };
   /** The chat's title still has to be given to its new session (after a switch). */
   retitle?: boolean;
   /**
@@ -308,12 +308,22 @@ export interface Thread {
 export interface LimitWindow {
   pct: number;
   resetsAt?: string | number | null;
+  label?: string;
+}
+
+export interface UsageGroup {
+  name: string;
+  description?: string;
+  session?: LimitWindow;
+  weekly?: LimitWindow;
 }
 
 export interface UsageSummary {
   session?: LimitWindow;
   weekly?: LimitWindow;
   plan?: string | null;
+  email?: string | null;
+  groups?: UsageGroup[];
 }
 
 export interface Account {

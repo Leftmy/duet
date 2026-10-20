@@ -94,7 +94,10 @@ export function PermissionPicker({ thread }: { thread: Thread }) {
   const caps = useStore((s) => s.providers[thread.provider]?.caps);
   const agent = useStore((s) => s.providers[thread.provider]?.label ?? 'Claude');
   const close = useCallback(() => setOpen(false), []);
-  const current = PERM_MODES.find((m) => m.mode === thread.permissionMode) ?? PERM_MODES[0];
+  const modes = PERM_MODES.map((m) => caps?.interactiveApprovals !== false ? m : m.mode === 'default'
+    ? { ...m, label: t('pickers.cliRules'), short: t('pickers.cliRules'), hint: t('pickers.cliPermissions', { name: agent }) }
+    : m.mode === 'acceptEdits' || m.mode === 'auto' ? { ...m, hint: t('pickers.cliModeHint', { name: agent }) } : m);
+  const current = modes.find((m) => m.mode === thread.permissionMode) ?? modes[0];
   const Icon = PERM_ICONS[current.mode];
   const autoSupported = models.find((m) => m.value === thread.model)?.supportsAutoMode !== false;
   const allowed = (mode: PermMode) => (!caps?.modes || caps.modes.includes(mode)) && (mode !== 'auto' || autoSupported);
@@ -113,7 +116,8 @@ export function PermissionPicker({ thread }: { thread: Thread }) {
       <div className="menu-title">
         <span>{t('pickers.permTitle', { name: agent })}</span>
       </div>
-      {PERM_MODES.filter((m) => allowed(m.mode)).map((m) => {
+      {caps?.interactiveApprovals === false && <p className="muted" style={{ padding: '0 12px', fontSize: 12 }}>{t('pickers.cliPermissions', { name: agent })}</p>}
+      {modes.filter((m) => allowed(m.mode)).map((m) => {
         const I = PERM_ICONS[m.mode];
         return (
           <MenuItem
@@ -187,8 +191,8 @@ export function ModelPicker({ thread }: { thread: Thread }) {
       ? models.find((m) => m.value !== 'default' && m.resolvedModel === model.resolvedModel)?.displayName
       : undefined;
   const label = resolvedDefault ?? (models.length ? modelLabel(thread.model, models) : thread.model === 'default' ? t('common.default') : thread.model);
-  const primary = models.filter((m) => !m.value.startsWith('claude-'));
-  const legacy = models.filter((m) => m.value.startsWith('claude-'));
+  const primary = models.filter((m) => thread.provider !== 'claude' || !m.value.startsWith('claude-'));
+  const legacy = models.filter((m) => thread.provider === 'claude' && m.value.startsWith('claude-'));
   const [showLegacy, setShowLegacy] = useState(false);
 
   const toggle = () => {

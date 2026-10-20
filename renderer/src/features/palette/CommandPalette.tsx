@@ -31,7 +31,7 @@ import { spring, useOverlay } from '../../components/Popover';
 import { openSearch, useSearchStore } from '../search/SearchModal';
 import { fuzzyAny } from './fuzzy';
 import { t } from '../../i18n';
-import { FORK_SUFFIX } from '../../components/Sidebar';
+import { chatRows } from '../../lib/chat-sessions';
 import './palette.css';
 
 /* ---------- store ---------- */
@@ -109,19 +109,6 @@ interface Scored {
   pos: number[];
   score: number;
 }
-
-// Default titles in every UI language (titles may have been created in another one).
-const commonDicts = import.meta.glob('../../i18n/locales/*/common.json', { eager: true, import: 'default' }) as Record<string, Record<string, string>>;
-const GENERIC_TITLES = new Set(
-  Object.values(commonDicts)
-    .flatMap((d) => [d.newChat, d.untitled])
-    .filter(Boolean)
-    .map((x) => x.trim().toLowerCase()),
-);
-const baseTitle = (title: string) => {
-  const t = title.replace(FORK_SUFFIX, '').trim().toLowerCase();
-  return t.length >= 6 && !GENERIC_TITLES.has(t) ? t : '';
-};
 
 const normDir = (p: string) => p.replace(/[\\/]+$/, '').toLowerCase();
 
@@ -312,7 +299,7 @@ function buildActions(s: Snapshot): Item[] {
     add({
       id: 'archive',
       label: t('palette.archive'),
-      sub: th.title.replace(FORK_SUFFIX, ''),
+      sub: th.title,
       keywords: t('palette.archive.keywords'),
       icon: <Archive size={15} />,
       run: () => {
@@ -363,50 +350,15 @@ function buildProjects(s: Snapshot, latest: Map<string, number>): Item[] {
   return items;
 }
 
-interface ChatRow {
-  key: string;
-  title: string;
-  ts: number;
-  cwd: string;
-  projectId?: string;
-  session?: SessionInfo;
-  thread?: Thread;
-  older: ChatRow[];
-}
-
 /** Recent chats newest first; continuations of one long conversation collapse into one row (like the sidebar). */
 function buildChats(s: Snapshot): { items: Item[]; latest: Map<string, number> } {
   const { threads, sessions, worktrees, settings, activeId } = s;
   const archived = new Set(settings.archived);
   const baseOf = (cwd: string) => worktrees[(cwd || '').toLowerCase()]?.base ?? cwd ?? '';
-  const known = new Set(sessions.map((x) => x.sessionId));
-  const bySession = new Map<string, Thread>();
-  for (const t of Object.values(threads)) if (t.sessionId) bySession.set(t.sessionId, t);
-
-  const rows: ChatRow[] = [];
-  const now = Date.now();
-  for (const t of Object.values(threads)) {
-    if (t.entries.length && (!t.sessionId || !known.has(t.sessionId)))
-      rows.push({ key: t.sessionId ?? t.id, title: t.title, ts: now, cwd: baseOf(t.cwd), projectId: t.projectId, thread: t, older: [] });
-  }
-  for (const x of sessions) {
-    const t = bySession.get(x.sessionId);
-    rows.push({ key: x.sessionId, title: x.title, ts: x.lastModified, cwd: baseOf(x.cwd), projectId: t?.projectId, session: x, thread: t, older: [] });
-  }
-  rows.sort((a, b) => b.ts - a.ts);
-
-  const heads = new Map<string, ChatRow>();
-  const out: ChatRow[] = [];
-  for (const r of rows) {
-    if (archived.has(r.key)) continue;
-    const base = baseTitle(r.title);
-    const head = base ? heads.get(base) : undefined;
-    if (head) head.older.push(r);
-    else {
-      if (base) heads.set(base, r);
-      out.push(r);
-    }
-  }
+  const hidden = new Set(settings.subSessions);
+  const out = chatRows(sessions.filter((x) => !hidden.has(x.sessionId)), threads, settings.links)
+    .filter((r) => ![r.key, ...(r.older ?? []).map((x) => x.key)].some((key) => archived.has(key)))
+    .map((r) => ({ ...r, cwd: baseOf(r.cwd), projectId: r.thread?.projectId }));
 
   const latest = new Map<string, number>();
   const active = threads[activeId];
@@ -416,13 +368,13 @@ function buildChats(s: Snapshot): { items: Item[]; latest: Map<string, number> }
     const go = () => {
       const st = useStore.getState();
       if (r.thread && st.threads[r.thread.id]) st.activate(r.thread.id);
-      else if (r.session) st.openSession(r.session, r.older.map((o) => o.session!).filter(Boolean));
+      else if (r.session) st.openSession(r.session, (r.older ?? []).map((o) => o.session!).filter(Boolean));
     };
-    const isCurrent = Boolean(active && (active.id === r.key || active.sessionId === r.key));
+    const isCurrent = Boolean(active && (active.id === r.thread?.id || active.id === r.key || active.sessionId === r.key));
     return {
       id: 'chat:' + r.key,
       section: 'chats',
-      label: r.title.replace(FORK_SUFFIX, '') || t('common.untitled'),
+      label: r.title || t('common.untitled'),
       keywords: `${project?.name ?? ''} ${r.cwd}`,
       icon: <MessageSquare size={15} />,
       project: project?.name ?? projectName(r.cwd),

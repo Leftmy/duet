@@ -38,7 +38,6 @@ import { AgentMark } from './AgentMark';
 import { askConfirm } from '../lib/dialog';
 import { detachThread, isDetachedWindow } from '../features/detach/detach';
 import { t } from '../i18n';
-import { FORK_SUFFIX } from './Sidebar';
 
 const suggestions = () => [
   { icon: ScanSearch, text: t('thread.suggestArchitecture') },
@@ -90,6 +89,7 @@ function OpenIn({ cwd }: { cwd: string }) {
 }
 
 function Header({ thread, changes, changesOpen, split }: { thread: Thread; changes: number; changesOpen: boolean; split: boolean }) {
+  const canFork = useStore((s) => s.providers[thread.provider]?.caps?.fork !== false);
   const rename = useStore((s) => s.renameThread);
   const del = useStore((s) => s.deleteThread);
   const setSettings = useStore((s) => s.setSettings);
@@ -156,7 +156,7 @@ function Header({ thread, changes, changesOpen, split }: { thread: Thread; chang
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.18 }}
           >
-            {started ? thread.title.replace(FORK_SUFFIX, '') : t('common.newChat')}
+            {started ? thread.title : t('common.newChat')}
           </motion.span>
         </AnimatePresence>
       )}
@@ -302,7 +302,7 @@ function Header({ thread, changes, changesOpen, split }: { thread: Thread; chang
               }}
             />
           )}
-          {thread.sessionId && (
+          {thread.sessionId && canFork && (
             <MenuItem
               icon={<GitFork size={14} />}
               label={t('thread.forkChat')}
@@ -584,12 +584,12 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
                     </div>
                   )}
                   {visible.map((e, i) => {
-                    if (e.kind === 'user') return <UserBubble key={e.id} entry={e} />;
+                    if (e.kind === 'user') return <UserBubble key={e.id} entry={e} threadId={thread.id} />;
                     const prev = agentBefore(visible, i);
                     return (
                       <Fragment key={e.id}>
                         {prev && e.provider && prev !== e.provider && <AgentDivider provider={e.provider} />}
-                        <TurnView turn={e} cwd={thread.cwd} activity={e.id === lastTurnId ? thread.activity : undefined} />
+                        <TurnView turn={e} threadId={thread.id} cwd={thread.cwd} activity={e.id === lastTurnId ? thread.activity : undefined} />
                       </Fragment>
                     );
                   })}

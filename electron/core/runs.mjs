@@ -97,10 +97,9 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
             ? askPermission(thread(t.sub.parentId), { ...req, agentID: t.sub.toolUseId, displayName: `${providerOf(t).label}: ${req.displayName ?? req.toolName}` })
             : askPermission(t, req),
         closed({ error, stderr } = {}) {
-          if (t.run === run) {
-            t.run = null;
-            t.resume = t.sessionId || t.resume;
-          }
+          if (t.run !== run) return;
+          t.run = null;
+          t.resume = t.sessionId || t.resume;
           for (const p of [...t.pending.values()]) p.resolve({ decision: 'deny', message: 'Session closed' });
           t.pending.clear();
           t.running = false;
@@ -119,6 +118,11 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
   function stop(t) {
     const run = t.run;
     t.run = null;
+    t.running = false;
+    for (const [reqId, pending] of [...t.pending]) {
+      pending.resolve({ decision: 'deny', message: 'Session closed' });
+      out('agent:permission-cancel', { threadId: t.id, reqId });
+    }
     run?.close();
   }
 
@@ -196,6 +200,22 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
     loadSubagents: (sessionId, cwd, provider) => registry.get(provider).loadSubagents?.(sessionId, cwd) ?? [],
     renameSession: (sessionId, title, cwd, provider) => registry.get(provider).renameSession(sessionId, title, cwd),
     deleteSession: (sessionId, cwd, provider) => registry.get(provider).deleteSession(sessionId, cwd),
+
+    switchProvider({ threadId, provider, resume }) {
+      const t = thread(threadId, provider);
+      registry.get(provider);
+      if (t.running) throw new Error(tr('claude.chatBusy'));
+      for (const child of childrenOf(threadId)) {
+        core.stopAgent(child.id);
+        threads.delete(child.id);
+      }
+      stop(t);
+      t.provider = provider;
+      t.sessionId = resume;
+      t.resume = resume;
+      t.resumeAt = undefined;
+      return true;
+    },
 
     send({ threadId, provider, cwd, dirs, model, effort, permissionMode, resume, text, images, uuid, chrome, priority, instructions }) {
       const t = thread(threadId, provider);
@@ -306,21 +326,26 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
 
     /**
      * Drops the end of the conversation; the next message continues from there. Anchor agents (Claude)
-     * resume at resumeAt (null = from the very start); turn-based ones (Codex) drop the last dropTurns turns.
+     * resume at resumeAt (null = from the very start); turn-based ones (Codex, Antigravity, Gemini) drop the last dropTurns turns.
      */
     async rewindConversation({ threadId, resumeAt, dropTurns, sessionId, provider }) {
       const t = thread(threadId, provider);
-      stop(t);
+      const isCurrent = !provider || provider === t.provider;
+      if (isCurrent) stop(t);
       const p = registry.get(provider ?? t.provider);
       if (p.caps.rollback === 'turns') {
-        const sid = sessionId || t.sessionId || t.resume;
+        const sid = sessionId || (isCurrent ? t.sessionId || t.resume : undefined);
         if (sid && dropTurns > 0) await p.rollback(sid, dropTurns);
-        t.resume = sid;
-        t.resumeAt = undefined;
+        if (isCurrent) {
+          t.resume = resumeAt === false ? undefined : sid;
+          if (resumeAt === false) t.sessionId = undefined;
+          t.resumeAt = undefined;
+        }
         return true;
       }
+      if (!isCurrent) return true;
       if (resumeAt) {
-        t.resume = t.sessionId || t.resume;
+        t.resume = sessionId || t.sessionId || t.resume;
         t.resumeAt = resumeAt;
       } else {
         t.resume = undefined;

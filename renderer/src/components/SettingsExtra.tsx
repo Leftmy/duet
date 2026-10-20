@@ -40,10 +40,12 @@ export function McpManager() {
   const [rows, setRows] = useState<McpRow[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [agent, setAgent] = useState<ProviderId>('claude');
+  const managed = useStore((s) => s.providers[agent]?.caps?.mcpManagement !== false);
   const isClaude = agent === 'claude';
   const [form, setForm] = useState({ name: '', transport: 'stdio' as 'stdio' | 'http' | 'sse', target: '', args: '', scope: 'user' as 'user' | 'project' | 'local', env: '' });
 
   const load = () => {
+    if (!managed) { setRows([]); return; }
     setRows(null);
     window.desk
       .mcpStatus(agent)
@@ -72,6 +74,16 @@ export function McpManager() {
   };
 
   const removable = (r: McpRow) => ['user', 'project', 'local', 'config'].includes(r.scope ?? '');
+
+  if (!managed) {
+    const label = useStore.getState().providers[agent]?.label ?? agent;
+    const cmd = agent === 'antigravity' ? 'agy mcp' : `${agent} mcp`;
+    return <>
+      <h2>{t('settings.nav_mcp')}</h2>
+      <AgentTabs value={agent} onChange={setAgent} />
+      <p className="muted small">{t('settings.mcpViaCli', { name: label, cmd })}</p>
+    </>;
+  }
 
   return (
     <>
@@ -219,7 +231,8 @@ export function SkillsList() {
 
 // ---------------- Stats ----------------
 
-const fmtTok = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+const fmtTok = (n: number) =>
+  n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
 const dayKey = (ts: number) => new Date(ts).toISOString().slice(0, 10);
 
 export function StatsView() {
@@ -230,7 +243,43 @@ export function StatsView() {
   }, [days]);
 
   const agg = useMemo(() => {
-    const turns = data?.turns ?? [];
+    const rawTurns = data?.turns ?? [];
+    const prevBySession = new Map<string, { cost: number; models: Map<string, any> }>();
+    const turns: any[] = [];
+    for (const r of rawTurns) {
+      if (!r.turns && (!r.models || !r.models.length)) continue;
+      if (r.delta) {
+        turns.push(r);
+        continue;
+      }
+      const sid = r.sessionId || '';
+      const prev = prevBySession.get(sid);
+      const rawCost = r.cost ?? 0;
+      const cost = prev ? Math.max(0, rawCost - prev.cost) : rawCost;
+      const prevModels = prev?.models ?? new Map<string, any>();
+      const nextModels = new Map<string, any>(prevModels);
+      const models = (r.models ?? []).map((m: any) => {
+        const pm = prevModels.get(m.model);
+        const cur = {
+          input: m.input ?? 0,
+          output: m.output ?? 0,
+          cacheRead: m.cacheRead ?? 0,
+          cacheWrite: m.cacheWrite ?? 0,
+          cost: m.cost ?? 0,
+        };
+        nextModels.set(m.model, cur);
+        return {
+          model: m.model,
+          input: pm ? Math.max(0, cur.input - pm.input) : cur.input,
+          output: pm ? Math.max(0, cur.output - pm.output) : cur.output,
+          cacheRead: pm ? Math.max(0, cur.cacheRead - pm.cacheRead) : cur.cacheRead,
+          cacheWrite: pm ? Math.max(0, cur.cacheWrite - pm.cacheWrite) : cur.cacheWrite,
+          cost: pm ? Math.max(0, cur.cost - pm.cost) : cur.cost,
+        };
+      });
+      prevBySession.set(sid, { cost: rawCost, models: nextModels });
+      turns.push({ ...r, cost, models, delta: true });
+    }
     const byDay = new Map<string, { tokens: number; turns: number }>();
     const byModel = new Map<string, number>();
     const byProject = new Map<string, number>();

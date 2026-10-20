@@ -124,7 +124,8 @@ function splitTrailing(items: Item[]) {
   return { steps: items.slice(0, i), tail: items.slice(i) };
 }
 
-export const TurnView = memo(function TurnView({ turn, cwd, activity }: { turn: Turn; cwd: string; activity?: string }) {
+export const TurnView = memo(function TurnView({ turn, threadId, cwd, activity }: { turn: Turn; threadId: string; cwd: string; activity?: string }) {
+  const canFork = useStore((s) => s.providers[s.threads[threadId]?.provider]?.caps?.fork !== false);
   const [expanded, setExpanded] = useState(false);
   const live = !turn.done;
   const split = splitTrailing(turn.items);
@@ -215,11 +216,11 @@ export const TurnView = memo(function TurnView({ turn, cwd, activity }: { turn: 
       {turn.done && finalText && (
         <div className="turn-actions">
           <CopyBtn text={finalText} />
-          {turn.lastUuid && (
+          {turn.lastUuid && canFork && (
             <button
               className="icon-btn sm"
               title={t('turn.forkHere')}
-              onClick={() => useStore.getState().forkFrom(useStore.getState().activeId, turn.lastUuid)}
+              onClick={() => useStore.getState().forkFrom(threadId, turn.lastUuid)}
             >
               <GitFork size={13} />
             </button>
@@ -253,23 +254,23 @@ function SummaryCard({ entry }: { entry: UserEntry }) {
   );
 }
 
-export const UserBubble = memo(function UserBubble({ entry }: { entry: UserEntry }) {
+export const UserBubble = memo(function UserBubble({ entry, threadId }: { entry: UserEntry; threadId: string }) {
   if (entry.summary) return <SummaryCard entry={entry} />;
-  return <UserMessage entry={entry} />;
+  return <UserMessage entry={entry} threadId={threadId} />;
 });
 
-const UserMessage = memo(function UserMessage({ entry }: { entry: UserEntry }) {
+const UserMessage = memo(function UserMessage({ entry, threadId }: { entry: UserEntry; threadId: string }) {
   const openRewind = useStore((s) => s.openRewind);
-  const activeId = useStore((s) => s.activeId);
+  const canRewind = useStore((s) => s.providers[s.threads[threadId]?.provider]?.caps?.rollback !== false);
   return (
     <motion.div className="user-row" data-entry={entry.id} {...enter}>
       <div className="user-actions">
         {entry.text && <CopyBtn text={entry.text} />}
-        {(entry.uuid || entry.text) && (
+        {canRewind && (entry.uuid || entry.text) && (
           <button
             className="icon-btn sm"
             title={t('turn.rewindHere')}
-            onClick={() => openRewind(activeId, entry.id)}
+            onClick={() => openRewind(threadId, entry.id)}
           >
             <History size={13} />
           </button>

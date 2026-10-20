@@ -1,4 +1,5 @@
 {
+  "imagesUnsupported": "{name} currently accepts text only. Remove images before sending.",
   "reviewComments_one": "{count} code comment",
   "reviewComments_other": "{count} code comments",
   "clear": "Clear",
