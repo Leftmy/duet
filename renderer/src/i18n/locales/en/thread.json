@@ -1,4 +1,5 @@
 {
+  "showEarlier": "Show earlier messages ({count} hidden)",
   "suggestArchitecture": "Explore this project's structure and briefly describe its architecture",
   "suggestBug": "Find and fix the most likely bug in the recent changes",
   "suggestTests": "Write tests for uncovered code",

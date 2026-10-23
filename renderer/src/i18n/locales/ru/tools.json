@@ -1,4 +1,5 @@
 {
+  "diffSimplified": "Большое или сложное изменение: показаны версии до и после целиком вместо минимального diff.",
   "unchanged_one": "⋯ {count} без изменений",
   "unchanged_few": "⋯ {count} без изменений",
   "unchanged_many": "⋯ {count} без изменений",

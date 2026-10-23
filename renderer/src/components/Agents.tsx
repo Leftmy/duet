@@ -173,6 +173,7 @@ function AgentChip({ agent, active, onClick }: { agent: AgentRun; active: boolea
 }
 
 function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: AgentRun; onCollapse: () => void }) {
+  const [shown, setShown] = useState(100);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopTask = useStore((s) => s.stopTask);
   const running = agent.status === 'running';
@@ -213,7 +214,8 @@ function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: Age
       </div>
       <div className="agent-scroll" ref={scrollRef}>
         <div className="items">
-          {agent.items.map((it) => (
+          {agent.items.length > shown && <button className="side-more" onClick={() => setShown((n) => n + 100)}>{t('agents.showEarlier', { count: agent.items.length - shown })}</button>}
+          {agent.items.slice(-shown).map((it) => (
             <motion.div key={it.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
               <ItemView item={it} live={running} cwd={thread.cwd} />
             </motion.div>

@@ -21,7 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import type { ToolItem } from '../types';
-import { diffStats, toolDiff, toolKind, toolSummary, type DiffLine } from '../lib/tools';
+import { toolStats, toolDiff, toolKind, toolSummary, type DiffLine } from '../lib/tools';
 import { duration } from '../lib/format';
 import { useNow } from '../lib/hooks';
 import { Markdown } from './Markdown';
@@ -241,7 +241,7 @@ export const ToolRow = memo(function ToolRow({ item, cwd }: { item: ToolItem; cw
   const kind = toolKind(item.name);
   const Icon = ICONS[kind];
   const s = toolSummary(item);
-  const stats = useMemo(() => (kind === 'edit' || kind === 'write' ? diffStats(toolDiff(item)) : null), [item, kind]);
+  const stats = useMemo(() => (kind === 'edit' || kind === 'write' ? toolStats(item) : null), [item.input, item.name, kind]);
 
   if (item.name === 'TodoWrite' && Array.isArray(item.input?.todos)) return <Todos todos={item.input.todos} />;
 

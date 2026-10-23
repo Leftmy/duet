@@ -1,4 +1,9 @@
 {
+  "uiRetry": "Return to chat",
+  "uiFailed": "The interface could not render this chat",
+  "uiWorkContinues": "Background agents continue working. You can open an empty chat to restore the interface; existing chats stay open.",
+  "uiRecover": "Open an empty chat",
+  "uiDetails": "Error details",
   "toggleSidebar": "Sidebar (Ctrl B)",
   "probeError": "Couldn't start Claude Code: {error}. Make sure you are logged in (`claude` → /login).",
   "updateReady": "A new version of Duet has been built",

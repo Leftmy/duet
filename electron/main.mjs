@@ -10,6 +10,8 @@ import { createAntigravityProvider } from './providers/antigravity/index.mjs';
 import { createGeminiProvider } from './providers/gemini/index.mjs';
 import { createRegistry } from './core/registry.mjs';
 import { createCore } from './core/runs.mjs';
+import { createEventBatcher } from './core/event-batch.mjs';
+import { createDiagnostics } from './core/diagnostics.mjs';
 import { createFiles } from './files.mjs';
 import { createTerminals } from './terminal.mjs';
 import { createStats } from './stats.mjs';
@@ -36,6 +38,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.CLAUDE_UI_DEV_URL;
 
 app.setName('Duet');
+// Multiple cores sharing one profile multiply agents, GPU work and IPC traffic.
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', () => {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+});
 // The app id predates the rename; keeping it lets the installer upgrade the old install in place.
 if (process.platform === 'win32') app.setAppUserModelId('local.claude-desk');
 migrateUserData('Claude Desk');
@@ -150,9 +160,21 @@ function writeSettings(next) {
 setLanguage(readSettings().ui?.language || 'en');
 
 // Events go to every app window (main + detached chat windows); each renderer ignores threads it doesn't show.
-const emit = (channel, payload) => {
-  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(channel, payload);
+const broadcast = (channel, payload) => {
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed() && !w.webContents.isDestroyed()) w.webContents.send(channel, payload);
 };
+const eventBatch = createEventBatcher((batch) => broadcast('agent:events', batch));
+const emit = (channel, payload) => {
+  if (channel === 'agent:event') return eventBatch.push(payload);
+  // A permission/close must never overtake the tool/result it belongs to.
+  eventBatch.flush();
+  broadcast(channel, payload);
+};
+const diagnostic = createDiagnostics(path.join(app.getPath('userData'), 'diagnostics.log'));
+app.on('render-process-gone', (_event, contents, details) => diagnostic('renderer-gone', { webContentsId: contents.id, ...details }));
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('unresponsive', () => diagnostic('renderer-unresponsive', { webContentsId: contents.id }));
+});
 const worktrees = createWorktrees(path.join(app.getPath('userData'), 'worktrees.json'));
 const browser = createBrowser({ getWindow: () => win, emit });
 const files = createFiles({ emit });
@@ -307,6 +329,9 @@ handle('app:openTargets', () => detectOpenTargets().map(({ id, label, labelKey }
 handle('app:openIn', (id, cwd) => openIn(id, cwd));
 
 handle('app:getSettings', () => readSettings().ui ?? {});
+handle('desk:ui-error', (error = {}) => diagnostic('ui-error', {
+  message: String(error.message ?? '').slice(0, 2000), stack: String(error.stack ?? '').slice(0, 4000),
+}));
 handle('app:setSettings', (ui) => {
   const s = readSettings();
   s.ui = { ...(s.ui ?? {}), ...ui };

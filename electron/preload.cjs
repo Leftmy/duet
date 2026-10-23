@@ -96,7 +96,18 @@ contextBridge.exposeInMainWorld('desk', {
   showInFolder: invoke('app:showInFolder'),
   gitBranch: invoke('app:gitBranch'),
   pathExists: invoke('app:pathExists'),
-  onEvent: on('agent:event'),
+  onEvents: (cb) => {
+    // A newly opened window may have this preload while the core is still the
+    // previous version. Accept both transports during a non-disruptive update.
+    const offSingle = on('agent:event')((payload) => cb([payload]));
+    const offBatch = on('agent:events')(cb);
+    return () => { offSingle(); offBatch(); };
+  },
+  onEvent: (cb) => {
+    const offSingle = on('agent:event')(cb);
+    const offBatch = on('agent:events')((batch) => { for (const payload of batch) cb(payload); });
+    return () => { offSingle(); offBatch(); };
+  },
   onPermission: on('agent:permission'),
   onPermissionCancel: on('agent:permission-cancel'),
   onClosed: on('agent:closed'),

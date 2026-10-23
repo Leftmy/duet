@@ -29,7 +29,9 @@ export function useSmoothText(target: string, streaming: boolean) {
         s.len = Math.min(goal, s.len + perFrame);
         setShown(s.target.slice(0, s.len));
       }
-      if (s.len < s.target.length || s.streaming) s.raf = requestAnimationFrame(tick);
+      // A new target restarts the effect. Do not keep an idle 60 Hz loop per
+      // streaming message while agents are waiting for tools or network I/O.
+      if (s.len < s.target.length) s.raf = requestAnimationFrame(tick);
       else s.raf = 0;
     };
     s.raf = requestAnimationFrame(tick);
@@ -95,7 +97,9 @@ export function useStickToBottom(ref: RefObject<HTMLElement | null>, deps: unkno
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
-  }, [ref]);
+    // The scroll element appears after the empty-chat/loading view is replaced.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref, ...deps]);
 
   useLayoutEffect(() => {
     const el = ref.current;

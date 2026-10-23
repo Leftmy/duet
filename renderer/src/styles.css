@@ -3895,3 +3895,8 @@ body.dragging-chat .project-row:not(.is-drop) {
 .tasks-head > span {
   white-space: nowrap;
 }
+/* A render failure must leave a usable recovery view while the main process keeps agents running. */
+.ui-failure { margin: auto; max-width: 660px; padding: 48px; color: var(--text); }
+.ui-failure p { margin: 16px 0; color: var(--text-2); }
+.ui-failure details { margin-top: 24px; }
+.ui-failure pre { white-space: pre-wrap; overflow-wrap: anywhere; }

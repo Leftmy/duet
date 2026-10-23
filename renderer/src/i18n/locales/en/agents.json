@@ -1,4 +1,5 @@
 {
+  "showEarlier": "Show earlier steps ({count} hidden)",
   "agent": "Agent",
   "agentPrefix": "Agent",
   "running": "is working",

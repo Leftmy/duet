@@ -132,6 +132,7 @@ declare global {
       gitBranch(cwd: string): Promise<string | null>;
       pathExists(p: string): Promise<boolean>;
       onEvent(cb: (p: { threadId: string; ev: DeskEvent }) => void): Unsubscribe;
+      onEvents?(cb: (p: { threadId: string; ev: DeskEvent }[]) => void): Unsubscribe;
       onPermission(cb: (p: any) => void): Unsubscribe;
       onPermissionCancel(cb: (p: { threadId: string; reqId: string }) => void): Unsubscribe;
       onClosed(cb: (p: { threadId: string; error: string | null; stderr?: string }) => void): Unsubscribe;

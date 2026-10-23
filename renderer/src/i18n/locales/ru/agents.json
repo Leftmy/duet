@@ -1,4 +1,5 @@
 {
+  "showEarlier": "Показать предыдущие шаги (скрыто: {count})",
   "agent": "Агент",
   "agentPrefix": "Агент",
   "running": "работает",

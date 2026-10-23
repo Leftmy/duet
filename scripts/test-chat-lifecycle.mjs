@@ -20,6 +20,7 @@ globalThis.window = { addEventListener() {}, desk: new Proxy({
   getSettings: async () => ({ autoTitles: false, notifications: false }),
   setSettings: async (patch) => calls.push(['settings', patch]),
   onEvent: (cb) => { event = cb; },
+  onEvents: (cb) => { event = (payload) => cb([payload]); },
   probe: async () => ({ models: [], providers: { claude: { available: true, models: [], caps: { rollback: 'anchor' } }, codex: { available: true, models: [], caps: { rollback: 'turns' } }, antigravity: { available: true, models: [], caps: { steer: false, images: false, fork: false, rollback: 'turns' }, usage: { plan: 'Antigravity', session: { pct: 6 }, weekly: { pct: 3 }, groups: [{ name: 'Gemini Models', session: { pct: 1 }, weekly: { pct: 1 } }, { name: 'Claude and GPT models', session: { pct: 6 }, weekly: { pct: 3 } }, { name: 'Gemini 4 Argon', weekly: { pct: 36 } }] } }, gemini: { available: true, models: [], caps: { steer: false, images: false, fork: false, rollback: 'turns' } } } }),
   listSessions: async () => sessions,
   wtAll: async () => ({}),
@@ -33,7 +34,7 @@ globalThis.window = { addEventListener() {}, desk: new Proxy({
   fork: async () => 'fork',
 }, { get: (target, key) => target[key] ?? (() => () => {}) }) };
 
-const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+const vite = await createServer({ server: { middlewareMode: true, ws: false }, appType: 'custom' });
 try {
   const { useStore: store, modelsOf } = await vite.ssrLoadModule('/src/store.ts');
   const { chatRows } = await vite.ssrLoadModule('/src/lib/chat-sessions.ts');

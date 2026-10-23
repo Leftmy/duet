@@ -1,6 +1,6 @@
 import { diffLines } from 'diff';
 import { basename } from './format';
-import { t } from '../i18n';
+import { locale, t } from '../i18n';
 import type { ToolItem } from '../types';
 
 export type ToolKind =
@@ -51,7 +51,11 @@ function linesOf(s: string) {
 
 export function buildDiff(oldText: string, newText: string): DiffLine[] {
   const out: DiffLine[] = [];
-  for (const part of diffLines(oldText ?? '', newText ?? '')) {
+  // Bound minimal-diff work so a large replacement cannot freeze the UI.
+  const parts = oldText.length + newText.length <= 1_000_000
+    ? diffLines(oldText, newText, { timeout: 15, maxEditLength: 2000 }) : undefined;
+  if (!parts) out.push({ type: 'sep', text: t('tools.diffSimplified') });
+  for (const part of parts ?? [{ value: oldText, removed: true, added: false }, { value: newText, added: true, removed: false }]) {
     const type = part.added ? 'add' : part.removed ? 'del' : 'ctx';
     const lines = linesOf(part.value);
     if (type === 'ctx' && lines.length > 6) {
@@ -90,7 +94,54 @@ function patchLines(diff: string, kind: string): DiffLine[] {
   return linesOf(diff).map((text) => (text.startsWith('+') ? { type: 'add' as const, text: text.slice(1) } : text.startsWith('-') ? { type: 'del' as const, text: text.slice(1) } : { type: kind === 'add' ? ('add' as const) : ('ctx' as const), text: text.replace(/^ /, '') }));
 }
 
+type CachedDiff = { name: string; language: string; lines: DiffLine[] | null | undefined; bytes: number };
+const diffCache = new WeakMap<object, CachedDiff>();
+// History may span days of edits. Keep rendered diff arrays within a fixed budget;
+// the LRU holds no input keys, so closing a chat never retains its original files.
+const recentDiffs = new Map<CachedDiff, true>();
+let diffBytes = 0;
+const MAX_DIFF_BYTES = 8 * 1024 * 1024;
+const statsCache = new WeakMap<object, { name: string; stats: { add: number; del: number } | null }>();
+
 export function toolDiff(item: ToolItem): DiffLine[] | null {
+  const input = item.input;
+  const language = locale();
+  const cached = input && typeof input === 'object' ? diffCache.get(input) : undefined;
+  if (cached?.name === item.name && cached.language === language && cached.lines !== undefined) {
+    recentDiffs.delete(cached);
+    recentDiffs.set(cached, true);
+    return cached.lines;
+  }
+  const lines = computeToolDiff(item);
+  if (input && typeof input === 'object') {
+    const bytes = lines?.reduce((sum, line) => sum + 64 + line.text.length * 2, 0) ?? 64;
+    if (bytes <= MAX_DIFF_BYTES) {
+      const entry = { name: item.name, language, lines, bytes };
+      diffCache.set(input, entry);
+      recentDiffs.set(entry, true);
+      diffBytes += bytes;
+      while (diffBytes > MAX_DIFF_BYTES || recentDiffs.size > 128) {
+        const oldest = recentDiffs.keys().next().value!;
+        recentDiffs.delete(oldest);
+        diffBytes -= oldest.bytes;
+        oldest.lines = undefined;
+      }
+    }
+  }
+  return lines;
+}
+
+/** Small counters stay cached even when a very large rendered diff is evicted. */
+export function toolStats(item: ToolItem) {
+  const input = item.input;
+  const cached = input && typeof input === 'object' ? statsCache.get(input) : undefined;
+  if (cached?.name === item.name) return cached.stats;
+  const stats = diffStats(toolDiff(item));
+  if (input && typeof input === 'object') statsCache.set(input, { name: item.name, stats });
+  return stats;
+}
+
+function computeToolDiff(item: ToolItem): DiffLine[] | null {
   const i = item.input ?? {};
   if (item.name === 'Edit') return buildDiff(i.old_string ?? '', i.new_string ?? '');
   if (item.name === 'Patch' && typeof i.diff === 'string') return patchLines(i.diff, i.kind);
@@ -98,7 +149,7 @@ export function toolDiff(item: ToolItem): DiffLine[] | null {
     const out: DiffLine[] = [];
     i.edits.forEach((e: any, n: number) => {
       if (n) out.push({ type: 'sep', text: '⋯' });
-      out.push(...buildDiff(e.old_string ?? '', e.new_string ?? ''));
+      for (const line of buildDiff(e.old_string ?? '', e.new_string ?? '')) out.push(line);
     });
     return out;
   }

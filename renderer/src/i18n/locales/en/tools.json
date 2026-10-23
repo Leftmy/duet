@@ -1,4 +1,5 @@
 {
+  "diffSimplified": "Large or complex change: showing full before/after instead of a minimal diff.",
   "unchanged_one": "⋯ {count} unchanged line",
   "unchanged_other": "⋯ {count} unchanged lines",
   "binaryFile": "Binary file",

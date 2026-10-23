@@ -60,7 +60,7 @@ function Notice({ item }: { item: NoticeItem }) {
   );
 }
 
-export function ItemView({ item, live, cwd }: { item: Item; live: boolean; cwd: string }) {
+export const ItemView = memo(function ItemView({ item, live, cwd }: { item: Item; live: boolean; cwd: string }) {
   switch (item.kind) {
     case 'text':
       return <StreamText item={item} live={live} />;
@@ -99,7 +99,7 @@ export function ItemView({ item, live, cwd }: { item: Item; live: boolean; cwd: 
         </div>
       );
   }
-}
+});
 
 function CopyBtn({ text }: { text: string }) {
   const [ok, setOk] = useState(false);

@@ -114,9 +114,12 @@ function applyContent(ed: TurnEditor, ev: DeskEvent, now: number): boolean {
       const cur = ed.get().items[i] as any;
       const inputJson = cur.inputJson + ev.json;
       let input = cur.input;
-      try {
-        input = JSON.parse(inputJson);
-      } catch {}
+      // Tool inputs can contain whole files: do not parse unfinished JSON on every token.
+      let end = inputJson.length - 1;
+      while (end >= 0 && /\s/.test(inputJson[end])) end--;
+      if (inputJson[end] === '}' || inputJson[end] === ']') {
+        try { input = JSON.parse(inputJson); } catch {}
+      }
       ed.patch(i, { inputJson, input });
       return true;
     }
@@ -323,6 +326,16 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
   const historical = Boolean(opts.history);
   const last = t0.entries.at(-1);
   const now = ev.timestamp ?? (historical && last ? (last.kind === 'user' ? last.ts : last.startedAt) : Date.now());
+  // Helper tokens do not edit the lead's history. Preserve its identity for memoized views.
+  const agents = applyAgentEvent(t0.agents, ev, now, historical);
+  if (agents) return agents === t0.agents ? t0 : { ...t0, agents };
+  if (ev.type === 'session') return ev.sessionId === t0.sessionId ? t0 : { ...t0, sessionId: ev.sessionId };
+  if (ev.type === 'context') return { ...t0, context: ev.usage };
+  if (ev.type === 'status') return {
+    ...t0,
+    activity: ev.activity === 'compacting' ? tr('reduce.compacting') : ev.activity === 'retrying' ? tr('reduce.retrying', { attempt: ev.attempt, max: ev.max }) : undefined,
+    ...(ev.permissionMode ? { permissionMode: ev.permissionMode } : {}),
+  };
   const t: Thread = { ...t0, entries: [...t0.entries] };
   const ed = new TurnEditor(t.entries, now, t.provider);
   /** Adds an item to the open turn, or to the last turn when the agent is idle. */
@@ -332,21 +345,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
     if (last?.kind === 'turn') t.entries[t.entries.length - 1] = { ...last, items: [...last.items, item] };
   };
 
-  const agents = applyAgentEvent(t.agents, ev, now, historical);
-  if (agents) {
-    t.agents = agents;
-    return t;
-  }
-
   switch (ev.type) {
-    case 'session':
-      t.sessionId = ev.sessionId;
-      break;
-    case 'status':
-      t.activity =
-        ev.activity === 'compacting' ? tr('reduce.compacting') : ev.activity === 'retrying' ? tr('reduce.retrying', { attempt: ev.attempt, max: ev.max }) : undefined;
-      if (ev.permissionMode) t.permissionMode = ev.permissionMode;
-      break;
     case 'step':
       t.activity = undefined;
       // The agent can start a turn on its own (e.g. reacting to a finished background task).
@@ -421,9 +420,6 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
       t.stopRequested = false;
       break;
     }
-    case 'context':
-      t.context = ev.usage;
-      break;
   }
   return t;
 }

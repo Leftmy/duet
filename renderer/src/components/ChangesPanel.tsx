@@ -36,37 +36,7 @@ import { PullRequestSection } from '../features/pr/PullRequestSection';
 import { isDetachedWindow } from '../features/detach/mode';
 import { t } from '../i18n';
 
-export interface FileChange {
-  path: string;
-  items: ToolItem[];
-  add: number;
-  del: number;
-  created: boolean;
-}
-
-export function collectChanges(thread: Thread): FileChange[] {
-  const byPath = new Map<string, FileChange>();
-  for (const e of thread.entries) {
-    if (e.kind !== 'turn') continue;
-    for (const it of e.items) {
-      if (it.kind !== 'tool' || it.status === 'error') continue;
-      const kind = toolKind(it.name);
-      if (kind !== 'edit' && kind !== 'write') continue;
-      const p: string = it.input?.file_path ?? it.input?.notebook_path;
-      if (!p) continue;
-      const key = p.toLowerCase();
-      let fc = byPath.get(key);
-      if (!fc) byPath.set(key, (fc = { path: p, items: [], add: 0, del: 0, created: it.name === 'Write' }));
-      fc.items.push(it);
-      const s = diffStats(toolDiff(it));
-      if (s) {
-        fc.add += s.add;
-        fc.del += s.del;
-      }
-    }
-  }
-  return [...byPath.values()].reverse();
-}
+import { collectChanges, type FileChange } from '../lib/changes';
 
 const FileRow = memo(function FileRow({ fc, cwd }: { fc: FileChange; cwd: string }) {
   const [open, setOpen] = useState(false);
@@ -506,7 +476,7 @@ function GitTab({ thread }: { thread: Thread }) {
 }
 
 export function ChangesPanel({ thread, onClose }: { thread: Thread; onClose: () => void }) {
-  const files = useMemo(() => collectChanges(thread), [thread]);
+  const files = useMemo(() => collectChanges(thread), [thread.entries]);
   const tab = useStore((s) => s.panelTab);
   const setTab = useStore((s) => s.setPanelTab);
   const agentCount = Object.keys(thread.agents).length;

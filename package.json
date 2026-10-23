@@ -14,6 +14,7 @@
     "start": "electron .",
     "typecheck": "tsc --noEmit -p .",
     "test:chat": "node scripts/test-chat-lifecycle.mjs",
+    "test:ui": "node scripts/test-ui-load.mjs && node scripts/test-ui-runtime.mjs",
     "test:antigravity": "node --test scripts/test-antigravity.mjs",
     "test:gemini": "node --test scripts/test-gemini.mjs",
     "icon": "node scripts/make-icon.mjs",

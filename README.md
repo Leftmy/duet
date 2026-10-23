@@ -47,6 +47,13 @@ desktop app and `codex` on `PATH`.
 
 ## Features
 
+For UI regressions under agent load, run `npm run build` and `npm run test:ui`.
+The tests use synthetic events and an isolated Electron profile, with no provider calls.
+Streaming UI updates are batched, diffs have a time/memory budget, and long transcripts
+mount a bounded tail with earlier messages available on demand. UI errors are recorded
+in `diagnostics.log` under the app's user-data directory. A React recovery view preserves
+running chats and event subscriptions without restarting the core.
+
 <table>
 <tr><td valign="top" width="50%">
 

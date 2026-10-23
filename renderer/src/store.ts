@@ -17,6 +17,7 @@ import type {
   ProviderId,
 } from './types';
 import type { ProviderProbe } from './desk';
+import type { DeskEvent } from './events';
 import { applyAgentTranscripts, applyEvent, fromHistory } from './lib/reduce';
 import { buildHandoff, unseenEntries } from './lib/handoff';
 import { linkedSessionIds, threadSessionIds } from './lib/chat-sessions';
@@ -323,6 +324,8 @@ function mergeFromDisk(cur: Entry[], fresh: Entry[], allowReset: boolean): { ent
 let sessionsTimer: ReturnType<typeof setTimeout> | undefined;
 let lastUsageAt = 0;
 
+let initPromise: Promise<void> | undefined;
+
 export const useStore = create<State>()((set, get) => {
   const update = (id: string, fn: (t: Thread) => Thread) =>
     set((s) => (s.threads[id] ? { threads: { ...s.threads, [id]: fn(s.threads[id]) } } : s));
@@ -519,14 +522,16 @@ export const useStore = create<State>()((set, get) => {
     panelTab: 'chat',
     worktrees: {},
 
-    async init() {
+    init() {
+      // Remounting a failed view must retain active chats and their one set of listeners.
+      return initPromise ??= (async () => {
       const saved = await window.desk.getSettings();
       const settings: Settings = { ...DEFAULT_SETTINGS, ...saved };
       setLang(settings.language);
       const first = blankThread(settings);
       set({ settings, threads: { [first.id]: first }, activeId: first.id });
 
-      window.desk.onEvent(({ threadId, ev }) => {
+      const onEvent = ({ threadId, ev }: { threadId: string; ev: DeskEvent }) => {
         if (ev.type === 'limits') {
           const provider = ev.provider ?? get().threads[threadId]?.provider ?? 'claude';
           const patch = toUsage(ev);
@@ -563,7 +568,37 @@ export const useStore = create<State>()((set, get) => {
             }
           }
         }
+      };
+      if (window.desk.onEvents) window.desk.onEvents((batch) => {
+        let pending: { threadId: string; ev: DeskEvent }[] = [];
+        const flush = () => {
+          if (!pending.length) return;
+          set((s) => {
+            let threads = s.threads;
+            for (const { threadId, ev } of pending) {
+              const t = threads[threadId];
+              if (!t) continue;
+              const next = applyEvent(t, ev);
+              if (next === t) continue;
+              if (threads === s.threads) threads = { ...threads };
+              threads[threadId] = next;
+            }
+            return threads === s.threads ? s : { threads };
+          });
+          pending = [];
+        };
+        for (const payload of batch) {
+          const ev = payload.ev;
+          // Side effects must observe exactly the preceding events in the stream.
+          if (ev.type === 'session' || ev.type === 'limits' || ev.type === 'turn.end'
+            || (ev.type === 'agent' && ev.sessionId) || (ev.type === 'task' && ev.op === 'end')) {
+            flush();
+            onEvent(payload);
+          } else pending.push(payload);
+        }
+        flush();
       });
+      else window.desk.onEvent(onEvent);
       // Only the chat you're looking at may pop its browser open.
       window.desk.onBrowserShow(({ key }) => !isDetachedWindow() && key === get().activeId && get().openBrowser());
       window.desk.onPermission((p) => {
@@ -696,6 +731,7 @@ export const useStore = create<State>()((set, get) => {
       } catch (e: any) {
         set({ ready: true, probeError: String(e?.message ?? e) });
       }
+      })().catch((error) => { initPromise = undefined; throw error; });
     },
 
     setSettings(patch) {

@@ -32,7 +32,8 @@ import { Composer } from './Composer';
 import { TurnView, UserBubble } from './TurnView';
 import { ProjectPicker, WorkModePicker, WorktreeChip } from './Pickers';
 import { MenuItem, Popover, spring } from './Popover';
-import { ChangesPanel, collectChanges } from './ChangesPanel';
+import { ChangesPanel } from './ChangesPanel';
+import { collectChanges } from '../lib/changes';
 import { ChaptersMenu } from './SessionItems';
 import { AgentMark } from './AgentMark';
 import { askConfirm } from '../lib/dialog';
@@ -425,7 +426,7 @@ function findEntry(entries: Entry[], uuid: string, text?: string) {
 const WINDOW = 40;
 const STEP = 40;
 
-function useEntryWindow(thread: Thread, scrollRef: React.RefObject<HTMLDivElement | null>) {
+function useEntryWindow(thread: Thread, scrollRef: React.RefObject<HTMLDivElement | null>, atBottom: boolean) {
   const [shown, setShown] = useState(WINDOW);
   const prev = useRef({ id: thread.id, len: thread.entries.length, first: thread.entries[0]?.id });
   const anchor = useRef<number | null>(null);
@@ -436,10 +437,11 @@ function useEntryWindow(thread: Thread, scrollRef: React.RefObject<HTMLDivElemen
     if (shown !== WINDOW) setShown(WINDOW);
   } else if (prev.current.len !== total) {
     const delta = total - prev.current.len;
-    const prepended = prev.current.first !== thread.entries[0]?.id;
+    const prepended = prev.current.len > 0 && prev.current.first !== thread.entries[0]?.id;
     prev.current = { id: thread.id, len: total, first: thread.entries[0]?.id };
     // Appended entries stay mounted; a prepended earlier part mounts gradually as you scroll up.
-    if (delta > 0) setShown((v) => v + (prepended ? Math.min(delta, STEP) : delta));
+    // Keep a bounded tail during live work; retain the reader's anchor while scrolled up.
+    if (delta > 0 && (prepended || !atBottom)) setShown((v) => v + (prepended ? Math.min(delta, STEP) : delta));
   }
 
   const hidden = Math.max(0, total - shown);
@@ -462,12 +464,14 @@ function useEntryWindow(thread: Thread, scrollRef: React.RefObject<HTMLDivElemen
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || hidden === 0) return;
-    const check = () => {
-      if (el.scrollTop < 900) expand();
+    let frame = 0;
+    const upward = (event: WheelEvent) => {
+      // Initial layout/content-visibility can emit scroll events while heights
+      // settle. Only an upward user gesture should mount earlier history.
+      if (event.deltaY < 0 && el.scrollTop < 900 && !frame) frame = requestAnimationFrame(() => { frame = 0; expand(); });
     };
-    el.addEventListener('scroll', check, { passive: true });
-    check();
-    return () => el.removeEventListener('scroll', check);
+    el.addEventListener('wheel', upward, { passive: true });
+    return () => { el.removeEventListener('wheel', upward); cancelAnimationFrame(frame); };
   }, [hidden, expand, scrollRef]);
 
   // Search results: find the message (by uuid, else by snippet text), mount it and scroll to it.
@@ -515,7 +519,7 @@ function useEntryWindow(thread: Thread, scrollRef: React.RefObject<HTMLDivElemen
     return () => window.removeEventListener('desk:reveal', onReveal);
   }, [thread, total, shown, expand, scrollRef]);
 
-  return { visible: hidden ? thread.entries.slice(hidden) : thread.entries, hidden };
+  return { visible: hidden ? thread.entries.slice(hidden) : thread.entries, hidden, expand };
 }
 
 /** Agent of the closest turn before index i. */
@@ -546,7 +550,7 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
   const setSettings = useStore((s) => s.setSettings);
   const empty = thread.entries.length === 0 && !thread.loading;
   const { atBottom, scrollToBottom, pin } = useStickToBottom(scrollRef, [thread.id, thread.entries.length, empty]);
-  const changes = useMemo(() => collectChanges(thread).length, [thread]);
+  const changes = useMemo(() => collectChanges(thread).length, [thread.entries]);
   const panelTab = useStore((s) => s.panelTab);
   const panelOpen = focused && changesOpen && (!empty || panelTab === 'browser' || panelTab === 'files' || panelTab === 'terminal');
   const panelWidth = panelTab === 'files' ? 760 : panelTab === 'browser' ? 680 : panelTab === 'terminal' ? 640 : panelTab === 'agents' ? 560 : 460;
@@ -558,8 +562,8 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thread.id, thread.loaded]);
 
-  const lastTurnId = [...thread.entries].reverse().find((e) => e.kind === 'turn')?.id;
-  const { visible, hidden } = useEntryWindow(thread, scrollRef);
+  const lastTurnId = thread.entries.findLast((e) => e.kind === 'turn')?.id;
+  const { visible, hidden, expand } = useEntryWindow(thread, scrollRef, atBottom);
 
   return (
     <div className="thread">
@@ -572,7 +576,7 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
             <>
               <div className="scroll" ref={scrollRef}>
                 <div className="column">
-                  {hidden > 0 && <div className="window-gap muted small">{t('thread.loadingEarlier')}</div>}
+                  {hidden > 0 && <button className="side-more window-gap" onClick={() => expand()}>{t('thread.showEarlier', { count: hidden })}</button>}
                   {hidden === 0 && thread.chain && (thread.chainLoaded ?? 0) < thread.chain.length && (
                     <EarlierParts thread={thread} scrollRef={scrollRef} />
                   )}
