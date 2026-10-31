@@ -80,14 +80,17 @@ export interface HandoffInput {
   tasks?: BgTask[];
   /** False for a fresh provider session, even when copied history includes that provider. */
   resume?: boolean;
+  /** Earlier history read by the native core without loading it into the UI. */
+  earlier?: string;
   /** Summarizes an older part of the transcript (a quick model call); may throw. */
   summarize?: (text: string) => Promise<string>;
 }
 
 /** The instructions text handed to the agent that takes over the chat; null when there is nothing to hand over. */
-export async function buildHandoff({ entries, from, to, cwd, label, changes, agents = [], tasks = [], resume, summarize }: HandoffInput): Promise<string | null> {
+export async function buildHandoff({ entries, from, to, cwd, label, changes, agents = [], tasks = [], resume, earlier, summarize }: HandoffInput): Promise<string | null> {
   const { entries: unseen, resumed } = resume === false ? { entries, resumed: false } : unseenEntries(entries, to);
   const blocks = transcript(unseen, label);
+  if (earlier?.trim()) blocks.unshift('## Earlier conversation retained on disk\n' + earlier.trim());
   if (agents.length) blocks.push('## Subagent work\n' + agents.map((a) =>
     `- ${a.name} (${a.status})\n  Task: ${clip(a.prompt, 1000)}\n  Result: ${clip(a.result || a.items.filter((i) => i.kind === 'text').map((i) => i.text).join('\n'), 3000)}`
   ).join('\n') + '\nThese are prior work records, not live agents you can address. Continue unfinished work or start your own helpers as needed.');

@@ -1,0 +1,43 @@
+// Injected only into an isolated debug test window; this file is never loaded by release builds.
+if (!location.hash.startsWith('#detached=')) (async () => {
+  const report = {platform: 'linux', checks: []};
+  const assert = (value, message) => { if (!value) throw Error(message); report.checks.push(message); };
+  const wait = async (condition) => {for (let n=0;n<600;n++){if(await condition())return;await new Promise(r=>setTimeout(r,100));}throw Error('UI initialization timeout');};
+  try {
+    await wait(()=>window.__deskStore?.getState().ready);
+    const info=await window.desk.call('desk:native-core');
+    assert(info.legacyNodeCore===false&&info.remainingNodeChannels.length===0,'all commands are native Rust');
+    const providers=Object.values(window.__deskStore.getState().providers);
+    assert(providers.length===3&&providers.every(p=>p.available),'three enabled CLI fixtures initialize through the UI');
+    const file='/tmp/duet-native-linux-file.txt';await window.desk.filesWrite(file,'NATIVE_LINUX_FILE_OK');assert((await window.desk.filesRead(file)).text==='NATIVE_LINUX_FILE_OK','native Linux file read/write');
+    const output=await new Promise(async(resolve,reject)=>{let data='';const id='native-linux-pty';const off=window.desk.onTermData(e=>{if(e.id===id)data+=e.data});const exit=window.desk.onTermExit(e=>{if(e.id===id){off();exit();resolve(data)}});try{await window.desk.termCreate({id,cwd:'/tmp',cols:80,rows:24});await window.desk.termWrite(id,"printf 'NATIVE_LINUX_PTY_OK\\n'; exit\r")}catch(e){off();exit();reject(e)}});
+    assert(output.includes('NATIVE_LINUX_PTY_OK'),'native Linux PTY input/output/exit');
+    await window.desk.browserSetBounds({x:650,y:100,width:500,height:500});await window.desk.browserSetVisible(true,'linux-test');await window.desk.browserNavigate('__DUET_NATIVE_LINUX_PAGE__','linux-test');
+    await wait(async()=>(await window.desk.browserState('linux-test')).title==='Duet Linux browser fixture');
+    assert((await window.desk.browserScreenshot('linux-test')).startsWith('iVBOR'),'native WebKitGTK child-page PNG capture');
+    const original=(await window.desk.browserState('linux-test')).activeTabId;
+    const second=await window.desk.browserControl({action:'new-tab',url:'about:blank'},'linux-test');
+    assert(second.tabs.length===2&&second.activeTabId!==original,'native Linux browser has independent tabs');
+    await window.desk.browserControl({action:'select-tab',tabId:original},'linux-test');
+    await window.desk.browserControl({action:'sleep-tab',tabId:original},'linux-test');
+    assert((await window.desk.browserState('linux-test')).sleeping===true,'native Linux tab sleep closes the page');
+    await window.desk.browserControl({action:'wake-tab',tabId:original},'linux-test');
+    await wait(async()=>(await window.desk.browserState('linux-test')).title==='Duet Linux browser fixture'&&!(await window.desk.browserState('linux-test')).loading);
+    assert((await window.desk.browserScreenshot('linux-test')).startsWith('iVBOR'),'native Linux sleeping page wakes and captures');
+    await window.desk.browserControl({action:'close-tab',tabId:second.activeTabId},'linux-test');
+    assert((await window.desk.browserState('linux-test')).tabs.length===1,'native Linux tab closes independently');
+    await window.desk.browserSetVisible(false,'linux-test');
+    const linked='/tmp/duet native linux link.md';await window.desk.filesWrite(linked,Array.from({length:12},(_,i)=>'LINUX_LINK_LINE_'+(i+1)).join('\n'));
+    const store=window.__deskStore,id=store.getState().newThread('/tmp');
+    store.setState({activeId:id,threads:{...store.getState().threads,[id]:{...store.getState().threads[id],provider:'codex',entries:[{kind:'turn',id:'linux-links',provider:'codex',items:[{kind:'text',id:'linux-link-text',confirmed:true,text:'[Linux file](<./duet%20native%20linux%20link.md#L5>)'}],done:true,startedAt:Date.now()}]}}});
+    await wait(()=>[...document.querySelectorAll('.md a')].some(a=>a.textContent==='Linux file'));[...document.querySelectorAll('.md a')].find(a=>a.textContent==='Linux file').click();
+    await wait(()=>store.getState().editorLocation?.line===5&&document.querySelector('.cm-activeLine')?.textContent.includes('LINUX_LINK_LINE_5'));
+    assert(store.getState().editorActive===linked,'native Linux Markdown file links navigate to the requested editor line');
+    const state=await window.__TAURI_INTERNALS__.invoke('window_control',{action:'state'});assert(typeof state.maximized==='boolean','native Linux window state');
+    await window.desk.call('win:detach',{threadId:'linux-detached',title:'Linux detached fixture',cwd:'/tmp'});await wait(async()=>(await window.desk.call('win:list')).length===1);assert((await window.desk.call('win:list')).length===1,'native Linux detached window');
+    assert(!document.querySelector('.ui-failure'),'React remains responsive after native services');report.ok=true;
+  } catch(e) {report.ok=false;report.error=String(e?.stack||e);}
+  await window.desk.call('desk:ui-error',{message:'DUET_LINUX_TEST_RESULT '+JSON.stringify(report)});
+  window.__deskStore?.setState({threads:{},activeId:''});
+  await window.__TAURI_INTERNALS__.invoke('window_control',{action:'close'});
+})();

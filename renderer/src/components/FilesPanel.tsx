@@ -89,6 +89,7 @@ const TreeNode = memo(function TreeNode({ path, name, dir, dim, depth }: { path:
 export function FilesPanel({ thread }: { thread: Thread }) {
   const files = useStore((s) => s.editorFiles);
   const active = useStore((s) => s.editorActive);
+  const location = useStore((s) => s.editorLocation);
   const openFile = useStore((s) => s.openFile);
   const closeFile = useStore((s) => s.closeFile);
   const dark = useStore((s) => s.resolvedTheme === 'dark');
@@ -133,10 +134,10 @@ export function FilesPanel({ thread }: { thread: Thread }) {
           themeComp.current.of(dark ? oneDark : []),
           keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => (save(), true) }]),
           EditorView.updateListener.of((u) => {
-            if (!u.docChanged) return;
             const buf = buffers.get(path);
             if (!buf) return;
             buf.state = u.state;
+            if (!u.docChanged) return;
             const dirty = u.state.doc.toString() !== buf.saved;
             if (dirty !== buf.dirty) {
               buf.dirty = dirty;
@@ -203,6 +204,15 @@ export function FilesPanel({ thread }: { thread: Thread }) {
     if (!viewRef.current) viewRef.current = new EditorView({ parent: hostRef.current });
     if (activeBuf && !activeBuf.error && viewRef.current.state !== activeBuf.state) viewRef.current.setState(activeBuf.state);
   }, [activeBuf, activeBuf?.state]);
+
+  useEffect(()=>{
+    const view=viewRef.current;
+    if(!view||!activeBuf||activeBuf.error||location?.path!==active||!location.line)return;
+    const doc=view.state.doc,line=doc.line(Math.min(doc.lines,Math.max(1,location.line)));
+    const anchor=line.from+Math.min(line.length,Math.max(0,(location.column??1)-1));
+    const head=location.endLine?doc.line(Math.min(doc.lines,Math.max(line.number,location.endLine))).to:anchor;
+    view.dispatch({selection:{anchor,head},effects:EditorView.scrollIntoView(anchor,{y:'center'})});view.focus();
+  },[active,activeBuf,location?.seq]);
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: themeComp.current.reconfigure(dark ? oneDark : []) });

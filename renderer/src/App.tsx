@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { OctagonX, PanelLeft, RefreshCw, X } from 'lucide-react';
 import { useStore } from './store';
@@ -7,12 +7,13 @@ import { t, useLang } from './i18n';
 import { Sidebar } from './components/Sidebar';
 import { ThreadView } from './components/ThreadView';
 import { spring } from './components/Popover';
-import { SettingsModal } from './components/Settings';
 import { ConfirmDialog, RewindDialog } from './components/Dialogs';
 import { SearchModal, openSearch } from './features/search/SearchModal';
 import { ProjectModal } from './components/ProjectModal';
 import { CommandPalette, togglePalette } from './features/palette/CommandPalette';
 import { onCommandsChanged, reprobeCommands } from './features/commands/events';
+
+const SettingsModal = lazy(() => import('./components/Settings').then((m) => ({ default: m.SettingsModal })));
 
 function useTheme() {
   const pref = useStore((s) => s.settings.theme);
@@ -79,6 +80,9 @@ export function App() {
   const zoomImage = useStore((s) => s.zoomImage);
   const updateAvailable = useStore((s) => s.updateAvailable);
   const split = useStore((s) => s.split);
+  const settingsOpen = useStore((s) => s.settingsOpen);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  useEffect(() => { if (settingsOpen) setSettingsLoaded(true); }, [settingsOpen]);
   const lang = useLang((s) => s.lang);
   useTheme();
   useProjectCommands();
@@ -216,7 +220,7 @@ export function App() {
         )}
       </AnimatePresence>
 
-      <SettingsModal />
+      {settingsLoaded && <Suspense fallback={null}><SettingsModal /></Suspense>}
       <ConfirmDialog />
       <RewindDialog />
       <SearchModal />

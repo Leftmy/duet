@@ -2,8 +2,8 @@
   "thinking": "Thinking",
   "thoughtFor": "Thought for {time}",
   "thoughts": "Thoughts",
-  "steerDelivered": "Follow-up — the agent took it into account while working",
-  "steerPending": "Follow-up — the agent will take it into account at the next step",
+  "steerDelivered": "Sent to the agent — available at the next step",
+  "steerPending": "Sending…",
   "workedFor": "Worked for {time}",
   "stepsDone_one": "Completed {count} step",
   "stepsDone_other": "Completed {count} steps",
@@ -12,5 +12,10 @@
   "summaryTitle": "Continued conversation — summary of the previous part",
   "rewindHere": "Rewind to this message — the conversation, the code, or both",
   "fileNotFound": "File not found: {path}",
-  "image": "image"
+  "image": "image",
+  "steerConsumed": "Added to the agent context",
+  "steerFailed": "Message was not sent",
+  "steerCancelled": "Sending cancelled",
+  "steerRetry": "Retry",
+  "steerInitialFailed": "The initial message was not sent. Retry after resolving its error."
 }

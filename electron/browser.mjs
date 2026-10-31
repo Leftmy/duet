@@ -1,6 +1,6 @@
 // Built-in browser: a WebContentsView docked into the right panel, plus a desk toolset
 // ("desk-browser") that lets the agent drive it — navigate, screenshot, read, click, type.
-import { WebContentsView, shell } from 'electron';
+import { WebContentsView, shell } from './desktop.mjs';
 import { z } from 'zod';
 import { defineTool } from './core/tools.mjs';
 
@@ -177,6 +177,7 @@ export function createBrowser({ getWindow, emit }) {
 
   return {
     toolset,
+    screenshot,
     state: (key) => stateOf(key),
     navigate,
     setBounds(b) {

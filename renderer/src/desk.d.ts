@@ -8,7 +8,8 @@ interface SendPayload {
   provider?: ProviderId;
   cwd: string;
   model: string;
-  effort?: Effort;
+  effort?: Effort|null;
+  serviceTier?: string;
   permissionMode: PermMode;
   resume?: string;
   text: string;
@@ -41,6 +42,7 @@ declare global {
   interface Window {
     desk: {
       platform: string;
+      nativeHistoryPaging?: boolean;
       getPathForFile?(file: File): string;
       /** Feature modules: invoke a namespaced channel (pr:, search:, sched:, voice:, instr:). */
       call<T = any>(channel: string, ...args: any[]): Promise<T>;
@@ -49,12 +51,14 @@ declare global {
       usage(provider?: ProviderId): Promise<any>;
       listSessions(): Promise<SessionInfo[]>;
       loadSession(sessionId: string, cwd?: string, segment?: number, provider?: ProviderId): Promise<DeskEvent[]>;
+      loadSessionPage?(sessionId: string, cwd?: string, segment?: number, provider?: ProviderId, options?: { before?: number; limit?: number }): Promise<{ events: DeskEvent[]; previous: number | null; totalTurns: number }>;
+      loadSubagentPage?(sessionId: string, cwd: string | undefined, provider: ProviderId, agent: string, options?: {before?: number; limit?: number}): Promise<{events: DeskEvent[]; previous: number | null; totalTurns: number; found?: boolean}>;
       /** Earlier parts of a session file (before in-file compactions), newest first. */
       segments(sessionId: string, cwd?: string, provider?: ProviderId): Promise<{ segment: number; count: number; ts: string }[]>;
       renameSession(sessionId: string, title: string, cwd?: string, provider?: ProviderId): Promise<void>;
       deleteSession(sessionId: string, cwd?: string, provider?: ProviderId): Promise<void>;
       send(payload: SendPayload): Promise<boolean>;
-      configure(payload: { threadId: string; model?: string; effort?: Effort; permissionMode?: PermMode }): Promise<boolean>;
+      configure(payload: { threadId: string; model?: string; effort?: Effort; permissionMode?: PermMode;serviceTier?:string }): Promise<boolean>;
       interrupt(threadId: string): Promise<boolean>;
       respondPermission(payload: {
         threadId: string;
@@ -72,8 +76,9 @@ declare global {
       browserSetBounds(b: { x: number; y: number; width: number; height: number }): Promise<void>;
       browserSetVisible(v: boolean, key?: string): Promise<void>;
       browserNavigate(url: string, key: string): Promise<BrowserState>;
-      browserControl(action: 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'devtools', key: string): Promise<BrowserState>;
+      browserControl(action: 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'devtools' | { action: string; tabId?: string; url?: string; background?: boolean; force?: boolean; pinned?: boolean }, key: string): Promise<BrowserState>;
       browserState(key: string): Promise<BrowserState>;
+      browserScreenshot(key: string): Promise<string>;
       onBrowserState(cb: (s: BrowserState & { key: string }) => void): Unsubscribe;
       onBrowserShow(cb: (e: { key: string }) => void): Unsubscribe;
       filesList(dir: string): Promise<{ name: string; path: string; dir: boolean; dim: boolean }[]>;
@@ -106,7 +111,7 @@ declare global {
         threadId: string;
         uuid: string;
         dryRun?: boolean;
-        config: { provider?: ProviderId; cwd: string; model: string; effort?: Effort; permissionMode: PermMode; resume?: string };
+        config: { provider?: ProviderId; cwd: string; model: string; effort?: Effort|null; permissionMode: PermMode; resume?: string };
       }): Promise<{ canRewind: boolean; error?: string; filesChanged?: string[]; insertions?: number; deletions?: number }>;
       fork(payload: { sessionId: string; cwd?: string; uuid?: string; provider?: ProviderId }): Promise<string>;
       rewindConversation(payload: { threadId: string; resumeAt?: string | boolean | null; dropTurns?: number; sessionId?: string; provider?: ProviderId }): Promise<boolean>;

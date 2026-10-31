@@ -1,3 +1,4 @@
+import { providerEntries } from '../lib/providers';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
@@ -48,14 +49,14 @@ interface Group {
   latest: number;
 }
 
-/** Plan limits of every agent: a compact block per agent (5-hour window and week), with per-group breakdown on hover. */
+/** One row per agent: account plan, short/week limits; detailed breakdown on hover. */
 function AgentsUsage({ active }: { active: ProviderId }) {
   const providers = useStore((s) => s.providers);
   const usageBy = useStore((s) => s.usageBy);
   const claudeUsage = useStore((s) => s.usage);
   const claudeAccount = useStore((s) => s.account);
   const [hover, setHover] = useState<{ id: ProviderId; rect: DOMRect } | null>(null);
-  const ids = (Object.keys(providers) as ProviderId[]).filter((id) => providers[id].available);
+  const ids = providerEntries(providers).map(([id]) => id).filter((id) => providers[id].available);
   // Re-check every half minute so a window whose reset time has passed stops showing its old value.
   const now = useNow(ids.length > 0, 30_000);
   const expired = ids.some((id) => {
@@ -91,8 +92,8 @@ function AgentsUsage({ active }: { active: ProviderId }) {
           >
             <span className="agent-usage-head">
               <AgentMark provider={id} size={13} />
-              <span className="agent-usage-name">{providers[id].label}</span>
-              {plan && <span className="muted small truncate">{plan}</span>}
+              <span className="agent-usage-name truncate">{providers[id].label}</span>
+              {plan && plan.toLowerCase() !== providers[id].label.toLowerCase() && <span className="agent-usage-plan muted truncate" title={plan}>{plan}</span>}
             </span>
             <span className="agent-usage-bars">
               <MiniBar label={t('sidebar.usageSessionShort')} w={u.session} now={now} />
@@ -733,7 +734,7 @@ export function Sidebar() {
   const providers = useStore((s) => s.providers);
   const claudeAccount = useStore((s) => s.account);
   const accountOf = (id: string) => (id === 'claude' ? claudeAccount : providers[id]?.account ?? {});
-  const email = accountOf(agent).email ?? Object.keys(providers).map((id) => accountOf(id).email).find(Boolean);
+  const email = accountOf(agent).email ?? providerEntries(providers).map(([id]) => accountOf(id).email).find(Boolean);
 
   const { groups, archivedRows, pinnedRows } = useMemo(() => {
     const byKey = new Map<string, Group>();
@@ -947,7 +948,7 @@ export function Sidebar() {
           <div className="account-text">
             <span className="truncate">{email ?? 'Duet'}</span>
             <span className="muted small truncate">
-              {Object.entries(providers)
+              {providerEntries(providers)
                 .filter(([, p]) => p.available)
                 .map(([, p]) => p.label)
                 .join(' · ')}

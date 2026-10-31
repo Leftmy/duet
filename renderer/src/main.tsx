@@ -7,6 +7,8 @@ import { isDetachedWindow } from './features/detach/mode';
 import { useStore } from './store';
 import { UIBoundary } from './components/UIBoundary';
 
+document.documentElement.dataset.desktopRuntime = '__TAURI_INTERNALS__' in window ? 'native' : 'electron';
+
 // Handy for inspecting state from DevTools (Ctrl+Shift+I).
 (window as any).__deskStore = useStore;
 

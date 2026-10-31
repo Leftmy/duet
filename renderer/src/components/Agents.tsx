@@ -174,8 +174,11 @@ function AgentChip({ agent, active, onClick }: { agent: AgentRun; active: boolea
 
 function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: AgentRun; onCollapse: () => void }) {
   const [shown, setShown] = useState(100);
+  const [message,setMessage]=useState(''),[sending,setSending]=useState(false),[messageError,setMessageError]=useState('');
+  const messageAgent=useStore(s=>s.messageAgent);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stopTask = useStore((s) => s.stopTask);
+  const loadTranscript = useStore((s) => s.loadAgentTranscripts);
   const running = agent.status === 'running';
   const now = useNow(running);
   const { pin } = useStickToBottom(scrollRef, [agent.id, agent.items.length]);
@@ -203,8 +206,8 @@ function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: Age
           {agent.toolUses ? ` · ${t('agents.steps', { count: agent.toolUses })}` : ''}
         </span>
         <div className="spacer" />
-        {running && task && (
-          <button className="pill sm tone-danger" onClick={() => stopTask(thread.id, task.id)}>
+        {running && (task||(agent.runId&&window.desk.nativeHistoryPaging===true)) && (
+          <button className="pill sm tone-danger" onClick={() => stopTask(thread.id, agent.runId??task!.id)}>
             <Square size={10} fill="currentColor" /> {t('agents.stop')}
           </button>
         )}
@@ -214,6 +217,7 @@ function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: Age
       </div>
       <div className="agent-scroll" ref={scrollRef}>
         <div className="items">
+          {agent.transcriptCursor!==undefined&&<button className="side-more" onClick={()=>loadTranscript(thread.id,agent.id,agent.transcriptCursor)}>{t('agents.showEarlier',{count:40})}</button>}
           {agent.items.length > shown && <button className="side-more" onClick={() => setShown((n) => n + 100)}>{t('agents.showEarlier', { count: agent.items.length - shown })}</button>}
           {agent.items.slice(-shown).map((it) => (
             <motion.div key={it.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
@@ -227,6 +231,11 @@ function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: Age
           )}
         </div>
       </div>
+      {agent.runId&&window.desk.nativeHistoryPaging===true&&<form className="agent-message-form" onSubmit={async e=>{e.preventDefault();if(!message.trim()||sending)return;setSending(true);setMessageError('');try{await messageAgent(thread.id,agent.runId!,message.trim());setMessage('');}catch(error:any){setMessageError(String(error?.message??error));}finally{setSending(false);}}}>
+        <input className="input" aria-label={t('agents.sendMessage')} placeholder={t('agents.messagePlaceholder')} value={message} maxLength={16000} onChange={e=>setMessage(e.target.value)}/>
+        <button className="btn" type="submit" disabled={sending||!message.trim()}>{t('agents.sendMessage')}</button>
+        {messageError&&<span className="small tone-danger" role="alert">{messageError}</span>}
+      </form>}
     </div>
   );
 }

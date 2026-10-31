@@ -9,6 +9,7 @@ import { DiffView } from './ToolRow';
 import { Markdown } from './Markdown';
 import { spring } from './Popover';
 import { t } from '../i18n';
+import { McpFormApproval, PermissionApproval } from './CodexApproval';
 
 const cardMotion = {
   initial: { opacity: 0, y: 14, scale: 0.985 },
@@ -60,19 +61,19 @@ function Questions({ threadId, approval }: { threadId: string; approval: Approva
 
   const toggle = (q: any, label: string) =>
     setPicked((p) => {
-      const cur = p[q.question] ?? [];
-      if (q.multiSelect) return { ...p, [q.question]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label] };
-      return { ...p, [q.question]: [label] };
+      const key=q.id??q.question,cur = p[key] ?? [];
+      if (q.multiSelect) return { ...p, [key]: cur.includes(label) ? cur.filter((x) => x !== label) : [...cur, label] };
+      return { ...p, [key]: [label] };
     });
 
   const answers = Object.fromEntries(
     questions.map((q) => {
-      const vals = [...(picked[q.question] ?? [])];
-      if (other[q.question]?.trim()) vals.push(other[q.question].trim());
-      return [q.question, vals.join(', ')];
+      const key=q.id??q.question,vals = [...(picked[key] ?? [])];
+      if (other[key]?.trim()) vals.push(other[key].trim());
+      return [key, vals];
     }),
   );
-  const complete = questions.every((q) => answers[q.question]);
+  const complete = questions.every((q) => answers[q.id??q.question]?.length);
 
   return (
     <motion.div className="approval" {...cardMotion}>
@@ -81,12 +82,12 @@ function Questions({ threadId, approval }: { threadId: string; approval: Approva
         <span>{t('approval.question')}</span>
       </div>
       {questions.map((q) => (
-        <div className="question" key={q.question}>
+        <div className="question" key={q.id??q.question}>
           {q.header && <span className="chip">{q.header}</span>}
           <div className="question-text">{q.question}</div>
           <div className="options">
             {(q.options ?? []).map((o: any) => {
-              const on = (picked[q.question] ?? []).includes(o.label);
+              const on = (picked[q.id??q.question] ?? []).includes(o.label);
               return (
                 <button key={o.label} className={`option ${on ? 'is-on' : ''}`} onClick={() => toggle(q, o.label)}>
                   <span className="option-label">{o.label}</span>
@@ -98,8 +99,9 @@ function Questions({ threadId, approval }: { threadId: string; approval: Approva
           <input
             className="input"
             placeholder={t('approval.otherAnswer')}
-            value={other[q.question] ?? ''}
-            onChange={(e) => setOther((o) => ({ ...o, [q.question]: e.target.value }))}
+            type={q.isSecret?'password':'text'} autoComplete="off"
+            value={other[q.id??q.question] ?? ''}
+            onChange={(e) => setOther((o) => ({ ...o, [q.id??q.question]: e.target.value }))}
           />
         </div>
       ))}
@@ -110,7 +112,7 @@ function Questions({ threadId, approval }: { threadId: string; approval: Approva
         <button
           className="btn primary"
           disabled={!complete}
-          onClick={() => respond(threadId, approval, 'allow', { updatedInput: { ...approval.input, answers } })}
+          onClick={() => respond(threadId, approval, 'allow', { updatedInput: { ...approval.input, answers:Object.fromEntries(questions.map(q=>[q.question,answers[q.id??q.question].join(', ')])),...(questions.some(q=>q.id)?{answerValues:answers}:{}) } })}
         >
           {t('approval.answer')}
         </button>
@@ -238,6 +240,8 @@ function ToolApproval({ threadId, approval, cwd }: { threadId: string; approval:
 }
 
 export function ApprovalCard({ threadId, approval, cwd }: { threadId: string; approval: Approval; cwd: string }) {
+  if(approval.toolName==='CodexMcpForm')return <McpFormApproval threadId={threadId} approval={approval}/>;
+  if(approval.toolName==='CodexPermissions')return <PermissionApproval threadId={threadId} approval={approval}/>;
   if (approval.toolName === 'AskUserQuestion') return <Questions threadId={threadId} approval={approval} />;
   if (approval.toolName === 'ExitPlanMode') return <PlanApproval threadId={threadId} approval={approval} />;
   return <ToolApproval threadId={threadId} approval={approval} cwd={cwd} />;

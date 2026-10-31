@@ -336,7 +336,9 @@ export function createClaudeProvider({ stats, log = () => {} }) {
     async probe(force = false) {
       if (probeCache && !force) return probeCache;
       const input = new InputQueue();
-      const q = query({ prompt: input, options: { ...exeOption, cwd: os.homedir() } });
+      // Account/model discovery must not launch every configured MCP service.
+      // Real chats and the explicit MCP settings view still load those tools.
+      const q = query({ prompt: input, options: { ...exeOption, cwd: os.homedir(), mcpServers: {}, strictMcpConfig: true } });
       try {
         const init = await withTimeout(q.initializationResult(), 60000, 'initialize');
         let usage = null;

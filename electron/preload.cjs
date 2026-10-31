@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('desk', {
   browserNavigate: invoke('browser:navigate'),
   browserControl: invoke('browser:control'),
   browserState: invoke('browser:state'),
+  browserScreenshot: invoke('browser:screenshot'),
   onBrowserState: on('browser:state'),
   onBrowserShow: on('browser:show'),
   filesList: invoke('files:list'),

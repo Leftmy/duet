@@ -1,3 +1,4 @@
+import { providerEntries, providerEnabled } from './lib/providers';
 import { create } from 'zustand';
 import type {
   Account,
@@ -26,6 +27,12 @@ import { askConfirm } from './lib/dialog';
 import { setLang, t as tr, type Lang } from './i18n';
 import { isDetachedWindow } from './features/detach/mode';
 
+async function historyPage(part: SessionInfo) {
+  if (window.desk.nativeHistoryPaging === true && window.desk.loadSessionPage) return window.desk.loadSessionPage(part.sessionId, part.cwd, part.segment, part.provider, { before: part.cursor, limit: 40 });
+  return { events: await window.desk.loadSession(part.sessionId, part.cwd, part.segment, part.provider), previous: null, totalTurns: 0 };
+}
+const byEntryTime = (a: Entry, b: Entry) => (a.kind === 'user' ? a.ts : a.startedAt) - (b.kind === 'user' ? b.ts : b.startedAt);
+
 interface Settings {
   language: Lang;
   theme: ThemePref;
@@ -52,6 +59,8 @@ interface Settings {
   autoTitles: boolean;
   workMode: 'local' | 'worktree';
   notifications: boolean;
+  idleAgentMinutes: number;
+  browserIdleMinutes: number;
   chrome: boolean;
   followUp: 'steer' | 'queue';
   projects: Project[];
@@ -99,12 +108,16 @@ interface State {
   detached: string[];
   editorFiles: string[];
   editorActive: string | null;
+  editorLocation?: {path:string;line?:number;column?:number;endLine?:number;seq:number};
+  codexPanel?:{threadId:string;tab:string;seq:number};
   review: Record<string, ReviewComment[]>;
   composerInsert: { seq: number; text: string } | null;
   updateAvailable: boolean;
   /** Number of open popovers/menus; native views (browser) hide while > 0. */
   overlays: number;
-  openFile(path: string): void;
+  openFile(path: string, location?: {line?:number;column?:number;endLine?:number}): void;
+  codexAction(id:string,action:string,params?:Record<string,any>):Promise<any>;
+  setServiceTier(id:string,tier:string):void;
   closeFile(path: string): void;
   addReview(threadId: string, c: Omit<ReviewComment, 'id'>): void;
   removeReview(threadId: string, id: string): void;
@@ -135,6 +148,7 @@ interface State {
   openSplit(open?: () => void): void;
   closeSplit(): void;
   send(id: string, text: string, images: ImageAttachment[]): void;
+  retrySteer(id:string,messageId:string):void;
   interrupt(id: string): void;
   setModel(id: string, model: string): void;
   /** Moves a chat to another agent; the conversation so far goes with the next message. */
@@ -157,6 +171,7 @@ interface State {
   setDraftImages(id: string, images: ImageAttachment[]): void;
   removeQueued(id: string, qid: string): void;
   stopTask(id: string, taskId: string): void;
+  messageAgent(id:string,runId:string,text:string):Promise<void>;
   backgroundTask(id: string, toolUseId: string): void;
   dismissTask(id: string, taskId: string): void;
   respond(id: string, approval: Approval, decision: 'allow' | 'always' | 'deny', extra?: { updatedInput?: any; message?: string }): void;
@@ -169,7 +184,7 @@ interface State {
   setPanelTab(tab: PanelTab): void;
   openBrowser(): void;
   openAgent(agentId?: string): void;
-  loadAgentTranscripts(id: string): void;
+  loadAgentTranscripts(id: string, agentId?: string, before?: number): void;
   openRewind(threadId: string, entryId: string): void;
   performRewind(threadId: string, entryId: string, mode: 'both' | 'conversation' | 'code'): Promise<void>;
   rewindDialog: { threadId: string; entryId: string } | null;
@@ -199,6 +214,8 @@ const DEFAULT_SETTINGS: Settings = {
   autoTitles: true,
   workMode: 'local',
   notifications: true,
+  idleAgentMinutes: 5,
+  browserIdleMinutes: 5,
   chrome: true,
   followUp: 'steer',
   projects: [],
@@ -235,7 +252,8 @@ function agentDefaults(s: Settings, provider: ProviderId) {
 function blankThread(s: Settings, cwd?: string, projectId?: string): Thread {
   const project = projectId ? s.projects.find((p) => p.id === projectId) : undefined;
   const d = project?.defaults ?? {};
-  const provider = d.provider ?? s.provider ?? 'claude';
+  const preferred = d.provider ?? s.provider ?? 'claude';
+  const provider = providerEnabled(preferred) ? preferred : 'claude';
   const def = agentDefaults(s, provider);
   return {
     id: 'new-' + uid(),
@@ -340,8 +358,9 @@ export const useStore = create<State>()((set, get) => {
 
   const effortFor = (t: Thread) => {
     const m = modelsOf(get(), t.provider).find((x) => x.value === t.model);
-    if (m && !m.supportedEffortLevels?.length) return undefined;
-    return t.effort;
+    if (m && !m.supportedEffortLevels?.length) return t.provider==='codex'?null:undefined;
+    const levels=m?.supportedEffortLevels;
+    return !levels||levels.includes(t.effort)?t.effort:levels.includes('high')?'high':levels.at(-1);
   };
 
   /** Remembers the model and effort picked for an agent; new chats on it start with them. */
@@ -368,9 +387,10 @@ export const useStore = create<State>()((set, get) => {
     if (!isDefaultTitle(t.title)) update(id, (x) => ({ ...x, retitle: true }));
   };
 
-  const dispatch = async (id: string, text: string, images: ImageAttachment[]) => {
+  const preparing = new Map<string,Promise<boolean>>();
+  const dispatchImpl = async (id: string, text: string, images: ImageAttachment[]) => {
     const t = get().threads[id];
-    if (!t) return;
+    if (!t) return false;
     const now = Date.now();
     const uuid = crypto.randomUUID();
     update(id, (x) => ({
@@ -391,6 +411,9 @@ export const useStore = create<State>()((set, get) => {
       try {
         const label = (p?: ProviderId) => get().providers[p ?? 'claude']?.label ?? p ?? 'Agent';
         const status = t.cwd ? await window.desk.gitStatus(t.cwd).catch(() => null) : null;
+        const pendingHistory=(t.chain??[]).slice(t.chainLoaded??0);
+        const earlier=window.desk.nativeHistoryPaging===true&&pendingHistory.length
+          ? await window.desk.call<string>('desk:history-context',pendingHistory) : undefined;
         instructions =
           (await buildHandoff({
             entries: t.entries,
@@ -399,12 +422,18 @@ export const useStore = create<State>()((set, get) => {
             resume: t.handoff.resume ?? Boolean(t.sessionId),
             cwd: t.cwd,
             label,
+            earlier,
             changes: status?.files.map((f) => `${f.status[0].toUpperCase()} ${f.path}`),
             agents: Object.values(t.agents),
             tasks: Object.values(t.tasks),
             summarize: (text) => window.desk.call<string>('desk:summarize', text),
           })) ?? undefined;
-      } catch {}
+      } catch (error: any) {
+        get().toast(tr('store.sendFailed', { error: error?.message ?? error }), 'error');
+        // Keep the handoff pending and the message editable if disk history cannot be read.
+        update(id, (x) => ({ ...x, entries: t.entries, status: 'idle', activity: undefined, draft: text, draftImages: images }));
+        return false;
+      }
       update(id, (x) => ({ ...x, handoff: undefined, activity: undefined }));
     }
     if (t.cwd) {
@@ -422,7 +451,7 @@ export const useStore = create<State>()((set, get) => {
       } catch (e: any) {
         get().toast(tr('store.worktreeFailed', { error: e?.message ?? e }), 'error');
         update(id, (x) => ({ ...x, status: 'idle', activity: undefined, workMode: 'local' }));
-        return;
+        return false;
       }
     }
     try {
@@ -442,13 +471,18 @@ export const useStore = create<State>()((set, get) => {
         images,
         uuid,
         chrome: get().settings.chrome,
+        serviceTier: t.serviceTier,
         ...(instructions ? { instructions } : {}),
       });
+      return true;
     } catch (e: any) {
       get().toast(tr('store.sendFailed', { error: e?.message ?? e }), 'error');
       update(id, (x) => ({ ...x, status: 'idle' }));
+      return false;
     }
   };
+
+  const dispatch=(id:string,text:string,images:ImageAttachment[])=>{const pending=dispatchImpl(id,text,images);preparing.set(id,pending);const clear=()=>{if(preparing.get(id)===pending)preparing.delete(id);};void pending.then(clear,clear);return pending;};
 
   const onResult = (id: string) => {
     clearTimeout(sessionsTimer);
@@ -527,6 +561,7 @@ export const useStore = create<State>()((set, get) => {
       return initPromise ??= (async () => {
       const saved = await window.desk.getSettings();
       const settings: Settings = { ...DEFAULT_SETTINGS, ...saved };
+      if (!providerEnabled(settings.provider)) settings.provider = 'claude';
       setLang(settings.language);
       const first = blankThread(settings);
       set({ settings, threads: { [first.id]: first }, activeId: first.id });
@@ -555,8 +590,9 @@ export const useStore = create<State>()((set, get) => {
         if (ev.type === 'agent' && ev.sessionId && !get().settings.subSessions.includes(ev.sessionId)) {
           persist({ subSessions: [ev.sessionId, ...get().settings.subSessions].slice(0, 1000) });
         }
-        if (ev.type === 'turn.end') onResult(threadId);
-        if (ev.type === 'task' && ev.op === 'end') {
+        if(ev.type==='message.receipt'&&ev.status==='failed'&&!ev.agent)get().toast(tr('store.sendFailed',{error:ev.error??''}),'error');
+        if (ev.type === 'turn.end'&&!ev.agent) onResult(threadId);
+        if (ev.type === 'task' && ev.op === 'end'&&!ev.agent) {
           const task = get().threads[threadId]?.tasks[ev.id];
           if (task?.background) {
             const ok = ev.status === 'completed';
@@ -622,6 +658,7 @@ export const useStore = create<State>()((set, get) => {
               interrupted: t.stopRequested,
             };
           }
+          for(let index=0;index<entries.length;index++){const entry=entries[index];if(entry.kind==='turn')entries[index]={...entry,items:entry.items.map(item=>item.kind==='steer'&&item.delivery&&['sending','accepted'].includes(item.delivery)?{...item,delivery:'failed',delivered:false,error:error??tr('turn.steerCancelled')}:item)};}
           const tasks = Object.fromEntries(
             Object.entries(t.tasks).map(([k, v]) => [k, v.status === 'running' || v.status === 'pending' ? { ...v, status: 'killed' as const, endedAt: Date.now() } : v]),
           );
@@ -720,7 +757,7 @@ export const useStore = create<State>()((set, get) => {
         window.addEventListener('focus', () => Date.now() - lastUsageAt > 60_000 && get().refreshUsage());
         set({
           ready: true,
-          providers: p.providers ?? {},
+          providers: Object.fromEntries(providerEntries(p.providers ?? {})),
           models: p.models,
           account: p.account ?? {},
           commands: p.commands ?? [],
@@ -778,10 +815,10 @@ export const useStore = create<State>()((set, get) => {
         ...(s.worktrees[latest.cwd.toLowerCase()] ? { workMode: 'worktree' as const, worktree: s.worktrees[latest.cwd.toLowerCase()] } : {}),
       };
       set({ threads: { ...s.threads, [t.id]: t }, activeId: t.id });
-      Promise.all(members.map(async (part) => ({
-        ...fromHistory(await window.desk.loadSession(part.sessionId, part.cwd, undefined, part.provider), part.provider ?? 'claude'),
-        part,
-      }))).then((histories) => {
+      Promise.all(members.map(async (part) => {
+        const page = await historyPage(part);
+        return { ...fromHistory(page.events, part.provider ?? 'claude'), part, previous: page.previous };
+      })).then((histories) => {
         const entries = histories.flatMap((h) => h.entries).sort((a, b) =>
           (a.kind === 'user' ? a.ts : a.startedAt) - (b.kind === 'user' ? b.ts : b.startedAt));
         const agents = Object.assign({}, ...histories.map((h) => h.agents));
@@ -791,9 +828,10 @@ export const useStore = create<State>()((set, get) => {
           ...(last?.kind === 'turn' && last.provider && last.provider !== provider ? { handoff: { from: last.provider } } : {}),
         }));
         // Compactions are earlier history inside a session, not separate chat branches.
+        const pages = histories.flatMap(h => h.previous === null ? [] : [{ ...h.part, cursor: h.previous }]);
         Promise.all(members.map(async (part) => (await window.desk.segments(part.sessionId, part.cwd, part.provider).catch(() => []))
           .map((segment) => ({ ...part, segment: segment.segment, lastModified: Date.parse(segment.ts) || part.lastModified }))
-        )).then((parts) => update(t.id, (x) => ({ ...x, chain: parts.flat().sort((a, b) => b.lastModified - a.lastModified), chainLoaded: 0, chainExpanded: true })));
+        )).then((parts) => update(t.id, (x) => ({ ...x, chain: [...pages, ...parts.flat()].sort((a, b) => b.lastModified - a.lastModified), chainLoaded: 0, chainExpanded: true })));
       }).catch((e) => {
         update(t.id, (x) => ({ ...x, loaded: true, loading: false }));
         get().toast(tr('store.historyFailed', { error: e?.message ?? e }), 'error');
@@ -808,13 +846,14 @@ export const useStore = create<State>()((set, get) => {
         const start = t.chainLoaded ?? 0;
         const parts = all ? t.chain.slice(start) : [t.chain[start]];
         // Older parts first, so the conversation reads top to bottom.
-        const loaded = await Promise.all(parts.map((p) => window.desk.loadSession(p.sessionId, p.cwd, p.segment, p.provider)));
+        const loaded = await Promise.all(parts.map(historyPage));
         const earlier = parts
-          .map((p, i) => fromHistory(loaded[i], p.provider ?? 'claude'))
+          .map((p, i) => fromHistory(loaded[i].events, p.provider ?? 'claude'))
           .reverse();
         update(id, (x) => ({
           ...x,
-          entries: [...earlier.flatMap((h) => h.entries), ...x.entries],
+          entries: [...earlier.flatMap((h) => h.entries), ...x.entries].sort(byEntryTime),
+          chain: [...x.chain!.slice(0, start + parts.length), ...parts.flatMap((p,i) => loaded[i].previous === null ? [] : [{...p,cursor:loaded[i].previous!}]), ...x.chain!.slice(start + parts.length)],
           agents: { ...Object.assign({}, ...earlier.map((h) => h.agents)), ...x.agents },
           chainLoaded: start + parts.length,
           loading: false,
@@ -848,6 +887,29 @@ export const useStore = create<State>()((set, get) => {
     send(id, text, images) {
       const t = get().threads[id];
       if (!t || t.loading || (!text.trim() && !images.length)) return;
+      if (!providerEnabled(t.provider)) return get().toast(tr('store.providerDisabled'), 'error');
+      if(t.provider==='codex'&&t.codex?.questions)update(id,x=>({...x,codex:{...x.codex,questions:null}}));
+      if(t.provider==='codex'&&!images.length){
+        const command=/^\/(status|help|mcp|skills|goal|model|permissions|diff|new|clear|fork)(?:\s+([\s\S]*))?$/.exec(text.trim());
+        if(command){
+          const name=command[1],argument=command[2]?.trim()??'';
+          const panel=(tab:string)=>set({codexPanel:{threadId:id,tab,seq:(get().codexPanel?.seq??0)+1}});
+          update(id,x=>({...x,draft:'',draftImages:[]}));
+          if(name==='new'||name==='clear'){const fresh=get().newThread(t.cwd);get().switchProvider(fresh,'codex');return;}
+          if(name==='fork'){if(t.status==='running'){update(id,x=>({...x,draft:text}));return;}void get().forkFrom(id);return;}
+          if(name==='diff'){get().activate(id);get().setPanelTab('git');get().setSettings({changesOpen:true});return;}
+          if(name==='model'&&argument){const model=modelsOf(get(),'codex').find(m=>m.value===argument);if(model)get().setModel(id,model.value);else{update(id,x=>({...x,draft:text}));panel('status');}return;}
+          if(name==='permissions'&&['default','acceptEdits','auto','plan','bypassPermissions'].includes(argument)){get().setPermissionMode(id,argument as PermMode);return;}
+          if(name==='goal'&&argument){
+            if(argument==='pause'||argument==='resume'||argument==='clear')void get().codexAction(id,argument==='clear'?'goal/clear':'goal/set',argument==='clear'?{}:{status:argument==='pause'?'paused':'active'}).catch(()=>{});
+            else void get().codexAction(id,'goal/set',{objective:argument,status:'active'}).catch(()=>{});
+            panel('goal');return;
+          }
+          panel(name==='mcp'||name==='skills'||name==='goal'?name:'status');return;
+        }
+        const match=/^\/(compact|review)(?:\s+([\s\S]*))?$/.exec(text.trim());
+        if(match){if(t.status==='running')return;update(id,x=>({...x,draft:'',draftImages:[]}));void get().codexAction(id,match[1],match[1]==='review'&&match[2]?{target:{type:'custom',instructions:match[2]}}:{}).catch(()=>{});return;}
+      }
       if (images.length && get().providers[t.provider]?.caps?.images === false) {
         get().toast(tr('composer.imagesUnsupported', { name: get().providers[t.provider]?.label ?? t.provider }), 'error');
         return;
@@ -859,25 +921,43 @@ export const useStore = create<State>()((set, get) => {
       update(id, (x) => ({ ...x, draft: '', draftImages: [] }));
       if (t.status === 'running') {
         if (get().settings.followUp === 'steer' && get().providers[t.provider]?.caps?.steer !== false) {
-          // Fold into the running turn: Claude picks it up at the next step without stopping.
-          const uuid = crypto.randomUUID();
-          update(id, (x) => {
-            const entries = [...x.entries];
-            const last = entries[entries.length - 1];
-            if (last?.kind === 'turn') {
-              entries[entries.length - 1] = { ...last, items: [...last.items, { kind: 'steer', id: uid(), text, images, delivered: false }] };
-            }
-            return { ...x, entries };
+          const uuid=crypto.randomUUID();
+          const item={kind:'steer' as const,id:uuid,text,images,delivered:false,delivery:'sending' as const};
+          const place=(x:Thread)=>{
+            const entries=[...x.entries],last=entries.at(-1);
+            if(last?.kind==='turn'&&!last.done)entries[entries.length-1]={...last,items:[...last.items,item]};
+            else entries.push({kind:'turn',id:uid(),provider:t.provider,items:[item],startedAt:Date.now(),done:x.status!=='running'});
+            return{...x,entries};
+          };
+          update(id,place);
+          void (preparing.get(id)??Promise.resolve(true)).then(async ready=>{
+            if(!ready)throw Error(tr('turn.steerInitialFailed'));
+            const current=get().threads[id];
+            if(!current||current.provider!==t.provider||current.stopRequested)throw Error(tr('turn.steerCancelled'));
+            await window.desk.send({threadId:id,provider:current.provider,cwd:current.cwd,model:current.model,effort:effortFor(current),permissionMode:current.permissionMode,resume:current.sessionId,text,images,uuid,priority:'next'});
+            if(window.desk.nativeHistoryPaging!==true)update(id,x=>applyEvent(x,{type:'message.receipt',id:uuid,status:'accepted'}));
+          }).catch((error:any)=>{
+            const message=String(error?.message??error);
+            update(id,x=>{
+              const exists=x.entries.some(e=>e.kind==='turn'&&e.items.some(i=>i.id===uuid));
+              return applyEvent(exists?x:place(x),{type:'message.receipt',id:uuid,status:'failed',error:message});
+            });
+            get().toast(tr('store.sendFailed',{error:message}),'error');
           });
-          window.desk
-            .send({ threadId: id, provider: t.provider, cwd: t.cwd, model: t.model, effort: effortFor(t), permissionMode: t.permissionMode, resume: t.sessionId, text, images, uuid, priority: 'next' })
-            .catch((e: any) => get().toast(tr('store.sendFailed', { error: e?.message ?? e }), 'error'));
           return;
         }
         update(id, (x) => ({ ...x, queue: [...x.queue, { id: uid(), text, images }] }));
         return;
       }
       dispatch(id, text.trim(), images);
+    },
+
+    retrySteer(id,messageId){
+      const thread=get().threads[id];if(!thread||thread.loading||thread.worktree?.removed)return;
+      const item=thread.entries.flatMap(e=>e.kind==='turn'?e.items:[]).find(i=>i.kind==='steer'&&i.id===messageId);
+      if(item?.kind!=='steer'||!['failed','cancelled'].includes(item.delivery??'')||(item.images?.length&&get().providers[thread.provider]?.caps?.images===false))return;
+      get().send(id,item.text,item.images??[]);
+      update(id,x=>({...x,entries:x.entries.map(e=>e.kind==='turn'?{...e,items:e.items.filter(i=>i.id!==messageId)}:e)}));
     },
 
     interrupt(id) {
@@ -892,6 +972,22 @@ export const useStore = create<State>()((set, get) => {
       window.desk.configure({ threadId: id, model }).catch((e) => get().toast(String(e?.message ?? e), 'error'));
     },
 
+    setServiceTier(id,tier){update(id,x=>({...x,serviceTier:tier}));window.desk.configure({threadId:id,serviceTier:tier}).catch(e=>get().toast(String(e),'error'));},
+    async codexAction(id,action,params={}){
+      const thread=get().threads[id];if(!thread||thread.provider!=='codex')return;
+      const generates=action==='review'||action==='compact';
+      if(generates&&thread.status==='running')return;
+      if(generates)update(id,x=>({...x,status:'running',entries:[...x.entries,{kind:'turn',id:uid(),provider:'codex',items:[],startedAt:Date.now(),done:false}]}));
+      try{
+        const result=await window.desk.call('desk:codex',{...params,action,threadId:id,sessionId:thread.sessionId,cwd:thread.cwd,config:{cwd:thread.cwd,model:thread.model,effort:effortFor(thread),permissionMode:thread.permissionMode,serviceTier:thread.serviceTier}});
+        if(result&&Object.prototype.hasOwnProperty.call(result,'goal'))update(id,x=>({...x,codex:{...x.codex,goal:result.goal}}));
+        if(action==='goal/clear')update(id,x=>({...x,codex:{...x.codex,goal:null}}));
+        return result;
+      }catch(error:any){
+        if(generates)update(id,x=>applyEvent(x,{type:'turn.end',isError:true,error:String(error?.message??error)}));
+        get().toast(String(error?.message??error),'error');throw error;
+      }
+    },
     setEffort(id, effort) {
       const t = get().threads[id];
       update(id, (x) => ({ ...x, effort }));
@@ -912,7 +1008,8 @@ export const useStore = create<State>()((set, get) => {
         return;
       }
       try {
-        const events = await window.desk.loadSession(t.sessionId, t.cwd, undefined, t.provider);
+        const page = await historyPage({sessionId:t.sessionId,cwd:t.cwd,provider:t.provider,title:t.title,lastModified:Date.now()});
+        const events = page.events;
         const { entries: fresh, agents } = fromHistory(events, t.provider);
         const cur = get().threads[id];
         if (!cur || cur.status === 'running' || cur.sessionId !== t.sessionId) return;
@@ -923,7 +1020,8 @@ export const useStore = create<State>()((set, get) => {
           if (manual) get().toast(tr('store.syncNothing'));
           return;
         }
-        update(id, (x) => ({ ...x, entries: merged.entries, agents: { ...x.agents, ...agents }, ...(merged.reset ? { chainLoaded: 0 } : {}) }));
+        update(id, (x) => ({ ...x, entries: merged.entries, agents: { ...x.agents, ...agents },
+          ...(window.desk.nativeHistoryPaging === true ? {chain:[...(page.previous===null?[]:[{sessionId:t.sessionId!,cwd:t.cwd,provider:t.provider,title:t.title,lastModified:Date.now(),cursor:page.previous}]),...(x.chain??[]).slice(x.chainLoaded??0).filter(p=>p.sessionId!==t.sessionId||p.segment!==undefined)],chainLoaded:0} : merged.reset ? { chainLoaded: 0 } : {}) }));
         // The agent's live process doesn't know these turns: the next message resumes from disk.
         window.desk.call('desk:release', id).catch(() => {});
         get().toast(tr('store.synced'));
@@ -933,6 +1031,7 @@ export const useStore = create<State>()((set, get) => {
     },
 
     switchProvider(id, provider) {
+      if (!providerEnabled(provider)) return;
       const t = get().threads[id];
       if (!t || t.loading || t.provider === provider) return;
       if (t.status === 'running') return get().toast(tr('store.switchWhileRunning'), 'error');
@@ -1064,6 +1163,7 @@ export const useStore = create<State>()((set, get) => {
     stopTask(id, taskId) {
       window.desk.stopTask(id, taskId).catch((e) => get().toast(tr('store.stopFailed', { error: e?.message ?? e }), 'error'));
     },
+    async messageAgent(id,runId,text){await window.desk.call('agent:send',{threadId:id,delegate:runId,text});},
 
     backgroundTask(id, toolUseId) {
       window.desk
@@ -1133,7 +1233,7 @@ export const useStore = create<State>()((set, get) => {
     /** Plan limits of every available agent. */
     async refreshUsage() {
       lastUsageAt = Date.now();
-      const ids = (Object.keys(get().providers) as ProviderId[]).filter((id) => get().providers[id].available);
+      const ids = providerEntries(get().providers).map(([id]) => id).filter((id) => get().providers[id].available);
       await Promise.all(
         (ids.length ? ids : (['claude'] as ProviderId[])).map(async (id) => {
           try {
@@ -1290,9 +1390,9 @@ export const useStore = create<State>()((set, get) => {
       }
     },
 
-    openFile(path) {
+    openFile(path, location) {
       const files = get().editorFiles;
-      set({ editorFiles: files.includes(path) ? files : [...files, path], editorActive: path, panelTab: 'files' });
+      set({ editorFiles: files.includes(path) ? files : [...files, path], editorActive: path, panelTab: 'files',editorLocation:location?{...location,path,seq:(get().editorLocation?.seq??0)+1}:undefined });
       persist({ changesOpen: true });
     },
 
@@ -1351,17 +1451,33 @@ export const useStore = create<State>()((set, get) => {
       set({ panelTab: 'agents', focusAgent: agentId ?? get().focusAgent });
       persist({ changesOpen: true });
       const t = get().threads[get().activeId];
-      if (t && agentId && t.agents[agentId]?.historical && !t.agents[agentId].transcriptLoaded) get().loadAgentTranscripts(t.id);
+      if (t && agentId && t.agents[agentId]?.historical && !t.agents[agentId].transcriptLoaded) get().loadAgentTranscripts(t.id,agentId);
     },
 
-    async loadAgentTranscripts(id) {
+    async loadAgentTranscripts(id, agentId, before) {
       const t = get().threads[id];
       if (!t) return;
       const sessions = { ...(t.sessions ?? {}), ...(t.sessionId ? { [t.provider]: t.sessionId } : {}) };
       try {
+        if(window.desk.nativeHistoryPaging===true&&window.desk.loadSubagentPage&&agentId){
+          const known=t.agents[agentId];if(!known)return;
+          const sources=known.transcriptSession?[known.transcriptSession]:Object.entries(sessions).map(([provider,sessionId])=>({provider:provider as ProviderId,sessionId:sessionId!}));
+          for(const source of sources){
+            const page=await window.desk.loadSubagentPage(source.sessionId,t.cwd,source.provider,agentId,{before,limit:40});
+            if(page.found===false)continue;
+            update(id,x=>{const current=x.agents[agentId];if(!current)return x;
+              const base=before===undefined?{...current,items:current.items.filter(item=>item.kind==='agentmsg'&&item.id===`${agentId}:prompt`)}:{...current,items:[]};
+              const loaded=applyAgentTranscripts({...x.agents,[agentId]:base},page.events)[agentId];
+              const items=before===undefined?loaded.items:[...loaded.items,...current.items.filter(item=>!loaded.items.some(older=>older.id===item.id))];
+              return {...x,agents:{...x.agents,[agentId]:{...loaded,items,transcriptLoaded:true,transcriptCursor:page.previous??undefined,transcriptSession:source}}};});
+            return;
+          }
+          update(id,x=>({...x,agents:{...x.agents,[agentId]:{...x.agents[agentId],transcriptLoaded:true}}}));
+          return;
+        }
         const batches = await Promise.all(Object.entries(sessions).map(([provider, sessionId]) =>
           window.desk.loadSubagents(sessionId!, t.cwd, provider as ProviderId)));
-        update(id, (x) => ({ ...x, agents: batches.reduce((agents, events) => applyAgentTranscripts(agents, events), x.agents) }));
+        update(id, (x) => ({ ...x, agents: Object.fromEntries(Object.entries(batches.reduce((agents, events) => applyAgentTranscripts(agents, events), x.agents)).map(([key,agent])=>[key,{...agent,transcriptLoaded:true}])) }));
       } catch (e: any) {
         get().toast(tr('store.agentsFailed', { error: e?.message ?? e }), 'error');
       }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, Notification } from './desktop.mjs';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,7 +7,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { claudeCli, createClaudeProvider } from './providers/claude/index.mjs';
 import { createCodexProvider } from './providers/codex/index.mjs';
 import { createAntigravityProvider } from './providers/antigravity/index.mjs';
-import { createGeminiProvider } from './providers/gemini/index.mjs';
 import { createRegistry } from './core/registry.mjs';
 import { createCore } from './core/runs.mjs';
 import { createEventBatcher } from './core/event-batch.mjs';
@@ -184,11 +183,16 @@ const registry = createRegistry();
 registry.register(createClaudeProvider({ stats, log: (...a) => console.log('[claude]', ...a) }));
 registry.register(createCodexProvider({ log: (...a) => console.log('[codex]', ...a) }));
 registry.register(createAntigravityProvider({ dataDir: app.getPath('userData'), log: (...a) => console.log('[antigravity]', ...a) }));
-registry.register(createGeminiProvider({ dataDir: app.getPath('userData'), log: (...a) => console.log('[gemini]', ...a) }));
 // Tools the app gives every agent: session helpers, the chat's own browser page and the other agents
 // (one level of delegation, so agents don't keep handing work to each other).
 const toolsFor = (key, { depth = 0 } = {}) => [sessionToolset(), browser.toolset(key), ...(depth < 1 ? [agentsToolset(core, key)] : [])];
 const core = createCore({ emit, registry, browser, toolsFor, log: (...a) => console.log('[core]', ...a) });
+const idleTrim = setInterval(() => {
+  const minutes = Number(readSettings().ui?.idleAgentMinutes ?? 5);
+  const released = core.trimIdleRuns({ maxIdleMs: Math.max(0, minutes) * 60000 });
+  if (released.length) diagnostic('idle-agents-released', { count: released.length });
+}, 30000);
+idleTrim.unref();
 
 function createWindow() {
   const settings = readSettings();
@@ -286,6 +290,7 @@ handle('browser:setVisible', (v, key) => browser.setVisible(v, key));
 handle('browser:navigate', (url, key) => browser.navigate(key, url));
 handle('browser:control', (action, key) => browser.control(key, action));
 handle('browser:state', (key) => browser.state(key));
+handle('browser:screenshot', (key) => browser.screenshot(key));
 handle('wt:isRepo', (cwd) => worktrees.isRepo(cwd));
 handle('wt:create', (cwd) => worktrees.create(cwd));
 handle('wt:apply', (dir) => worktrees.apply(dir));
@@ -332,6 +337,9 @@ handle('app:getSettings', () => readSettings().ui ?? {});
 handle('desk:ui-error', (error = {}) => diagnostic('ui-error', {
   message: String(error.message ?? '').slice(0, 2000), stack: String(error.stack ?? '').slice(0, 4000),
 }));
+handle('desk:notification', ({ title, body }) => {
+  if (Notification?.isSupported?.()) new Notification({ title: String(title).slice(0, 200), body: String(body).slice(0, 2000) }).show();
+});
 handle('app:setSettings', (ui) => {
   const s = readSettings();
   s.ui = { ...(s.ui ?? {}), ...ui };
@@ -438,6 +446,8 @@ const featureCtx = { handle, emit, core, stats, app, getWindow: () => win, userD
 const featuresDir = path.join(__dirname, 'features');
 if (fs.existsSync(featuresDir)) {
   for (const f of fs.readdirSync(featuresDir).filter((x) => x.endsWith('.mjs'))) {
+    // An isolated preview must never start a second Telegram poller or scheduler.
+    if (process.env.DUET_NATIVE_PREVIEW && ['telegram.mjs', 'scheduler.mjs'].includes(f)) continue;
     import(pathToFileURL(path.join(featuresDir, f)).href)
       .then((m) => m.register?.(featureCtx))
       .catch((e) => console.error('[feature]', f, e));

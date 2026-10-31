@@ -1,4 +1,8 @@
 {
+  "idleAgents": "Release idle agent processes",
+  "idleAgentsHint": "Finished agents free memory after this timeout. Chats resume from saved history. Running tasks and approvals remain active.",
+  "idleNever": "Keep running",
+  "idleMinutes": "After {minutes} min",
   "mcpViaCli": "Manage {name} MCP servers with {cmd} in a terminal. New chats use the CLI configuration.",
   "title": "Settings",
   "closeEsc": "Close (Esc)",

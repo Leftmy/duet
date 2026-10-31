@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Duet",
+  "version": "0.2.5",
+  "identifier": "local.claude-desk.native",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "deb",
+      "appimage"
+    ],
+    "icon": [
+      "../build/icon.ico",
+      "../build/icon.png"
+    ],
+    "resources": {
+      "resources/native-runtime/": "runtime/"
+    }
+  }
+}

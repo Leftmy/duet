@@ -34,7 +34,7 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
 
   const thread = (id, provider) => {
     let t = threads.get(id);
-    if (!t) threads.set(id, (t = { id, provider: provider || 'claude', pending: new Map(), run: null, running: false }));
+    if (!t) threads.set(id, (t = { id, provider: provider || 'claude', pending: new Map(), nativeWork: new Set(), run: null, running: false }));
     return t;
   };
   const providerOf = (t) => registry.get(t.provider);
@@ -86,6 +86,17 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
           t.lastEventAt = Date.now();
           if (ev.type === 'session') t.sessionId = ev.sessionId;
           if (ev.type === 'turn.end') t.running = false;
+          // Keep native background tasks alive even after the lead's turn ended.
+          if (ev.type === 'agent') {
+            if (ev.status && ev.status !== 'running') t.nativeWork.delete('agent:' + ev.id);
+            else if (ev.status === 'running' || ev.name || ev.prompt || ev.agentType) t.nativeWork.add('agent:' + ev.id);
+          }
+          if (ev.type === 'agent.drop' || ev.type === 'agent.mark') t.nativeWork.delete('agent:' + ev.id);
+          if (ev.type === 'task') {
+            if (ev.op === 'start') t.nativeWork.add('task:' + ev.id);
+            else if (ev.op === 'end' || (ev.op === 'update' && ['completed','failed','killed','stopped'].includes(ev.status))) t.nativeWork.delete('task:' + ev.id);
+            else if (ev.op === 'background') for (const task of ev.tasks) t.nativeWork.add('task:' + task.id);
+          }
           // Plan limits are per agent; say whose they are.
           if (ev.type === 'limits') ev = { ...ev, provider: t.provider };
           if (t.sub) return subagentEvent(t, ev);
@@ -124,6 +135,7 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
       out('agent:permission-cancel', { threadId: t.id, reqId });
     }
     run?.close();
+    t.nativeWork.clear();
   }
 
   // ---------- subagents: runs started by another run's run_agent tool ----------
@@ -258,6 +270,19 @@ export function createCore({ emit, registry, browser, toolsFor = () => [], log =
       t.resume = t.sessionId || t.resume;
       stop(t);
       return true;
+    },
+
+    /** Release quiet SDK processes; the next message resumes their recorded session. */
+    trimIdleRuns({ maxIdleMs = 5 * 60000, now = Date.now() } = {}) {
+      if (!(maxIdleMs > 0)) return [];
+      const released = [];
+      for (const t of threads.values()) {
+        if (!t.run || t.running || t.pending.size || t.nativeWork.size || !(t.sessionId || t.resume)) continue;
+        if (now - (t.lastEventAt ?? now) < maxIdleMs) continue;
+        if (childrenOf(t.id).some((child) => child.sub.status === 'running')) continue;
+        if (core.release(t.id)) released.push(t.id);
+      }
+      return released;
     },
 
     /**

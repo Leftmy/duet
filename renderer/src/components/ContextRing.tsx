@@ -87,7 +87,7 @@ export function ContextRing({ thread }: { thread: Thread }) {
         </span>
         <span className="menu-text">
           <span className="menu-label">{t('thread.compact')}</span>
-          <span className="menu-hint">{t('thread.compactHint')}</span>
+          <span className="menu-hint">{t(thread.provider==='codex'?'codex.compactHint':'thread.compactHint')}</span>
         </span>
       </button>
     </Popover>

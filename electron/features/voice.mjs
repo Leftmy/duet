@@ -1,6 +1,6 @@
 // Voice input: lets the app window use the microphone (audio only). Speech-to-text itself runs
 // in the renderer (Whisper in a Web Worker), so nothing else is needed from the main process.
-import { session } from 'electron';
+import { session } from '../desktop.mjs';
 
 // Permissions the app's own window may use; everything else is denied.
 // clipboard-sanitized-write = navigator.clipboard.writeText (copy buttons).

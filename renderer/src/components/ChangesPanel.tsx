@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowDown,
@@ -29,14 +29,15 @@ import { AgentsTab } from './Agents';
 import { TasksTab } from './TasksBar';
 import { askConfirm } from '../lib/dialog';
 import { BrowserPanel } from './BrowserPanel';
-import { FilesPanel } from './FilesPanel';
-import { TerminalPanel } from './TerminalPanel';
 import { useStore } from '../store';
 import { PullRequestSection } from '../features/pr/PullRequestSection';
 import { isDetachedWindow } from '../features/detach/mode';
 import { t } from '../i18n';
 
 import { collectChanges, type FileChange } from '../lib/changes';
+
+const FilesPanel = lazy(() => import('./FilesPanel').then((m) => ({ default: m.FilesPanel })));
+const TerminalPanel = lazy(() => import('./TerminalPanel').then((m) => ({ default: m.TerminalPanel })));
 
 const FileRow = memo(function FileRow({ fc, cwd }: { fc: FileChange; cwd: string }) {
   const [open, setOpen] = useState(false);
@@ -536,9 +537,9 @@ export function ChangesPanel({ thread, onClose }: { thread: Thread; onClose: () 
       ) : tab === 'tasks' ? (
         <TasksTab thread={thread} />
       ) : tab === 'files' ? (
-        <FilesPanel thread={thread} />
+        <Suspense fallback={null}><FilesPanel thread={thread} /></Suspense>
       ) : tab === 'terminal' ? (
-        <TerminalPanel thread={thread} />
+        <Suspense fallback={null}><TerminalPanel thread={thread} /></Suspense>
       ) : (
         <BrowserPanel threadId={thread.id} />
       )}

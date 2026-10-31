@@ -152,7 +152,7 @@ export function register(ctx) {
 
   // ---------- notifications ----------
   let electronMod;
-  const electron = async () => (electronMod ??= await import('electron').catch(() => ({})));
+  const electron = async () => (electronMod ??= await import('../desktop.mjs').catch(() => ({})));
 
   async function notifyDesktop(title, body) {
     const { Notification } = await electron();

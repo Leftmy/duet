@@ -1,7 +1,7 @@
 // Detached chat windows: one chat per extra BrowserWindow. A chat lives in exactly one window —
 // the main window drops it once the detached window reports ready (win:detached) and may show it
 // again in the sidebar after that window closes (win:reattached).
-import { BrowserWindow, ipcMain, screen, shell } from 'electron';
+import { BrowserWindow, ipcMain, screen, shell } from '../desktop.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

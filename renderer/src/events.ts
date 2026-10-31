@@ -1,6 +1,6 @@
 // Desk event protocol: the one stream format every agent provider emits, live and when a saved
-// session is loaded. Providers (electron/providers/*) translate their native messages into these;
-// the renderer folds them into entries (lib/reduce.ts). Keep this file and electron/core/events.mjs in sync.
+// session is loaded. Rust providers (src-tauri/src/core) translate their native messages into these;
+// the renderer folds them into entries (lib/reduce.ts). Keep this contract and the native translator fixtures in sync.
 import type { AgentRun, BgTask, ContextUsage, ImageAttachment, LimitWindow, PermMode } from './types';
 
 export type ProviderId = 'claude' | 'codex' | 'antigravity' | 'gemini';
@@ -8,7 +8,9 @@ export type ProviderId = 'claude' | 'codex' | 'antigravity' | 'gemini';
 /** Where a notice goes: 'open' starts a turn if none is open, 'feed' joins the open or the last turn, 'if-open' only an open turn. */
 export type NoticeAt = 'open' | 'feed' | 'if-open';
 
-export type DeskEvent = { timestamp?: number } & (
+export type DeskEvent = { timestamp?: number; agent?: string } & (
+  | {type:'message.receipt';id:string;status:'accepted'|'consumed'|'failed'|'cancelled';error?:string}
+  | { type:'codex.state'; state:{goal?:CodexGoal|null;diff?:string;title?:string;settings?:Record<string,any>;questions?:{id:string;items:{title:string;options:string[]|null}[]}|null} }
   /** The provider's session id (first event of a run, and again after a resume). */
   | { type: 'session'; sessionId: string; model?: string }
   | { type: 'status'; activity: 'compacting' | 'retrying' | null; attempt?: number; max?: number; permissionMode?: PermMode }
@@ -53,6 +55,8 @@ export type DeskEvent = { timestamp?: number } & (
       toolUses?: number;
       /** Session of a subagent that is another agent's own run (desk-agents). */
       sessionId?: string;
+      runId?: string;
+      parentId?: string;
     }
   /** A message between the lead and a subagent; dedupe skips texts the agent already has. */
   | { type: 'agent.msg'; agent: string; id?: string; dir: 'to' | 'from'; text: string; label: 'assignment' | 'report' | 'message'; dedupe?: boolean }
@@ -64,3 +68,5 @@ export type DeskEvent = { timestamp?: number } & (
   | { type: 'limits'; provider?: ProviderId; session?: LimitWindow; weekly?: LimitWindow; rejected?: boolean }
   /** Live context-window occupancy, for providers that report it with the stream. */
   | { type: 'context'; usage: ContextUsage });
+
+export interface CodexGoal {objective:string;status:string;tokenBudget:number|null;tokensUsed:number;timeUsedSeconds:number}

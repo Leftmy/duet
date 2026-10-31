@@ -1,3 +1,4 @@
+import { providerEntries } from '../lib/providers';
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, RefreshCw, RotateCw, Trash2 } from 'lucide-react';
 import { useStore, projectName } from '../store';
@@ -9,7 +10,7 @@ import type { ProviderId } from '../types';
 /** Tabs for sections that differ per agent (MCP servers, …). */
 export function AgentTabs({ value, onChange }: { value: ProviderId; onChange: (p: ProviderId) => void }) {
   const providers = useStore((s) => s.providers);
-  const ids = Object.keys(providers) as ProviderId[];
+  const ids = providerEntries(providers).map(([id]) => id);
   if (ids.length < 2) return null;
   return (
     <div className="agent-tabs">

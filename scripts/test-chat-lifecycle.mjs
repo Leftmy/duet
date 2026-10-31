@@ -29,6 +29,7 @@ globalThis.window = { addEventListener() {}, desk: new Proxy({
   loadSubagents: async (...args) => { calls.push(['subagents', ...args]); return []; },
   gitStatus: async () => ({ files: [] }),
   send: async (payload) => { calls.push(['send', payload]); return true; },
+  configure: async (payload) => { calls.push(['configure', payload]); return true; },
   rewindConversation: async (payload) => { calls.push(['rewindConversation', payload]); return true; },
   call: async (name, ...args) => { calls.push([name, ...args]); return name === 'win:list' ? [] : true; },
   fork: async () => 'fork',
@@ -39,7 +40,7 @@ try {
   const { useStore: store, modelsOf } = await vite.ssrLoadModule('/src/store.ts');
   const { chatRows } = await vite.ssrLoadModule('/src/lib/chat-sessions.ts');
   const { buildHandoff } = await vite.ssrLoadModule('/src/lib/handoff.ts');
-  const { fromHistory } = await vite.ssrLoadModule('/src/lib/reduce.ts');
+  const { fromHistory, applyEvent } = await vite.ssrLoadModule('/src/lib/reduce.ts');
   const wait = async (condition) => {
     for (let i = 0; i < 100; i++) {
       if (condition()) return;
@@ -54,6 +55,8 @@ try {
   assert.equal(chatRows([sessions[0]], {}, {}, { a: 'codex' })[0].provider, 'codex');
 
   await store.getState().init();
+  assert.deepEqual(Object.keys(store.getState().providers),['claude','codex','antigravity']);
+  assert.equal(store.getState().providers.gemini,undefined);
   assert.equal(store.getState().usageBy.antigravity?.groups?.length, 3, 'toUsage preserves all 3 Antigravity quota groups');
   store.getState().openSession(sessions[0]);
   await wait(() => store.getState().threads.a?.loaded);
@@ -131,7 +134,9 @@ try {
   store.getState().switchProvider('a', 'antigravity');
   assert.equal(store.getState().threads.a.sessionId, 'agy-local');
   store.getState().switchProvider('a', 'gemini');
-  assert.equal(store.getState().threads.a.provider, 'gemini');
+  assert.equal(store.getState().threads.a.provider, 'antigravity', 'disabled Gemini cannot be selected');
+  // Legacy Gemini history can still be opened and rewound without launching it.
+  store.setState({threads:{...store.getState().threads,a:{...store.getState().threads.a,provider:'gemini'}}});
   event({ threadId: 'a', ev: { type: 'session', sessionId: 'gem-local' } });
   assert.equal(chatRows([...sessions.slice(0, 2), { ...sessions[0], sessionId: 'agy-local', provider: 'antigravity' }, { ...sessions[0], sessionId: 'gem-local', provider: 'gemini' }], { a: store.getState().threads.a }, store.getState().settings.links).length, 1);
 
@@ -145,11 +150,13 @@ try {
   assert.equal(rewoundThread.sessionId, 'gem-local', 'journal-backed session id stays stable on rewind');
   assert.equal(rewoundThread.handoff?.resume, false, 'next turn re-seeds kept conversation prefix');
   assert.ok(calls.some(([type, p]) => type === 'rewindConversation' && p.provider === 'antigravity' && p.dropTurns === 1), 'non-active turn-based provider is also rolled back');
+  const disabledCount=calls.filter(([type])=>type==='send').length;store.getState().send('a','disabled message',[]);assert.equal(calls.filter(([type])=>type==='send').length,disabledCount);
+  store.getState().switchProvider('a','antigravity');
   const nBeforeRewindSend = calls.filter(([type]) => type === 'send').length;
   store.getState().send('a', 'After cross-provider rewind', []);
   await wait(() => calls.filter(([type]) => type === 'send').length > nBeforeRewindSend);
   const gemSend = calls.filter(([type]) => type === 'send').at(-1)[1];
-  assert.equal(gemSend.provider, 'gemini');
+  assert.equal(gemSend.provider, 'antigravity');
   assert.match(gemSend.instructions, /claude-100/);
   assert.doesNotMatch(gemSend.instructions, /Continue with Google/);
 
@@ -185,7 +192,87 @@ try {
   assert.equal(core.providerOf('chat'), 'codex');
   assert.equal(core.sessionOf('chat'), 'b', 'rolling back another provider must not clobber active provider session');
   assert.deepEqual(rolledBack, [['gemini', 'gem-1', 2]]);
-  console.log('PASS: forks, aliases, hot switch, handoff, rewind across providers, agent history, reopen ordering, stale run callbacks, cold-start selector');
+  // Native history paging: old context stays on disk, and only the selected helper is loaded.
+  window.desk.nativeHistoryPaging=true;
+  window.desk.loadSessionPage=async(_id,_cwd,_segment,provider,options)=>({events:history(provider,[options?.before?100:300]),previous:options?.before?null:3,totalTurns:3});
+  const priorCall=window.desk.call;
+  window.desk.call=async(name,...args)=>name==='desk:history-context'?'ORIGINAL_GOAL_FROM_DISK':priorCall(name,...args);
+  store.setState({threads:{},activeId:'',settings:{...store.getState().settings,links:{},chatProviders:{}}});
+  const paged={sessionId:'paged',provider:'claude',title:'Paged fixture',cwd:'/project',lastModified:300};
+  store.getState().openSession(paged);await wait(()=>store.getState().threads.paged?.chain?.length===1);
+  const pagedInitial=store.getState().threads.paged;
+  assert.deepEqual(pagedInitial.entries.filter(e=>e.kind==='user').map(e=>e.text),['claude-300']);
+  store.getState().switchProvider('paged','codex');store.getState().send('paged','Continue with the same goal',[]);
+  await wait(()=>calls.some(([kind,p])=>kind==='send'&&p.threadId==='paged'));
+  const pagedSent=calls.find(([kind,p])=>kind==='send'&&p.threadId==='paged')[1];
+  assert.match(pagedSent.instructions,/ORIGINAL_GOAL_FROM_DISK/);assert.match(pagedSent.instructions,/claude-300/);
+  const pendingSwitch={...pagedInitial,provider:'codex',handoff:{from:'claude'}};
+  store.setState({threads:{paged:pendingSwitch},activeId:'paged'});
+  window.desk.call=async(name,...args)=>{if(name==='desk:history-context')throw Error('History is temporarily unavailable');return priorCall(name,...args)};
+  const beforeFailedSwitch=calls.filter(([kind])=>kind==='send').length;
+  store.getState().send('paged','Keep my goal',[]);
+  await wait(()=>store.getState().threads.paged.status==='idle');
+  assert.equal(calls.filter(([kind])=>kind==='send').length,beforeFailedSwitch,'do not send without older handoff context');
+  assert.equal(store.getState().threads.paged.handoff.from,'claude');
+  assert.equal(store.getState().threads.paged.draft,'Keep my goal');
+  assert.deepEqual(store.getState().threads.paged.entries,pagedInitial.entries);
+  window.desk.call=async(name,...args)=>name==='desk:history-context'?'ORIGINAL_GOAL_FROM_DISK':priorCall(name,...args);
+  store.setState({threads:{paged:pagedInitial},activeId:'paged'});
+  await store.getState().loadEarlierPart('paged');
+  assert.deepEqual(store.getState().threads.paged.entries.filter(e=>e.kind==='user').map(e=>e.text),['claude-100','claude-300']);
+  const loadedHelpers=[];
+  window.desk.loadSubagentPage=async(sessionId,_cwd,provider,helper,options)=>{loadedHelpers.push(helper);return{found:true,events:[{type:'text',agent:helper,id:options?.before?'old-helper':'new-helper',text:options?.before?'Earlier helper work':'Recent helper work',mode:'final'}],previous:options?.before?null:2,totalTurns:2}};
+  store.setState({threads:{paged:{...store.getState().threads.paged,agents:{helper:{...agent,items:[]},other:{...agent,id:'other',items:[]}}}}});
+  await store.getState().loadAgentTranscripts('paged','helper');
+  assert.deepEqual(loadedHelpers,['helper']);assert.equal(store.getState().threads.paged.agents.other.transcriptLoaded,undefined);
+  assert.equal(store.getState().threads.paged.agents.helper.transcriptCursor,2);
+  await store.getState().loadAgentTranscripts('paged','helper',2);
+  assert.deepEqual(store.getState().threads.paged.agents.helper.items.filter(i=>i.kind==='text').map(i=>i.text),['Earlier helper work','Recent helper work']);
+  // Native slash commands are local operations on the same chat, never model prompts.
+  const codex={...store.getState().threads.paged,id:'native-commands',provider:'codex',sessionId:'native-session',status:'idle',handoff:undefined,entries:[],agents:{},model:'limited',effort:'max'};
+  store.setState({threads:{[codex.id]:codex},activeId:codex.id,providers:{...store.getState().providers,codex:{...store.getState().providers.codex,models:[{value:'limited',displayName:'Limited',supportedEffortLevels:['low','ultra']},{value:'no-reasoning',displayName:'No reasoning'}]}}});
+  window.desk.call=priorCall;
+  const beforeCommands=calls.filter(([kind])=>kind==='send').length;
+  store.getState().send(codex.id,'/mcp',[]);assert.equal(store.getState().codexPanel.tab,'mcp');
+  store.getState().send(codex.id,'/permissions plan',[]);assert.equal(store.getState().threads[codex.id].permissionMode,'plan');
+  store.getState().send(codex.id,'/compact',[]);
+  await wait(()=>calls.some(([kind,p])=>kind==='desk:codex'&&p.action==='compact'));
+  assert.equal(calls.filter(([kind])=>kind==='send').length,beforeCommands);
+  assert.equal(store.getState().threads[codex.id].sessionId,'native-session');
+  const compact=calls.find(([kind,p])=>kind==='desk:codex'&&p.action==='compact')[1];assert.equal(compact.config.effort,'ultra');assert.equal(compact.config.permissionMode,'plan');
+  const state=applyEvent({...codex,codex:{goal:{objective:'keep goal'}}},{type:'codex.state',state:{questions:{id:'ask-1',items:[{title:'Pick one',options:['A','B']}]}}});
+  assert.equal(state.codex.goal.objective,'keep goal');assert.equal(state.codex.questions.items[0].title,'Pick one');
+  const scoped=applyEvent({...state,context:{percentage:11},tasks:{},agents:{}},{type:'context',agent:'nested',usage:{totalTokens:90,maxTokens:100,percentage:90,categories:[]}});
+  assert.equal(scoped.context.percentage,11);assert.equal(scoped.agents.nested.progress,'90% context');
+  const announced=applyEvent(scoped,{type:'agent',id:'nested',runId:'sub-nested',parentId:'parent',provider:'codex'});assert.equal(announced.agents.nested.runId,'sub-nested');
+  const titled=applyEvent(announced,{type:'codex.state',agent:'nested',state:{title:'Child title',goal:null}});assert.equal(titled.title,announced.title);assert.equal(titled.codex.goal.objective,'keep goal');
+  store.setState({threads:{[codex.id]:{...state,status:'idle',model:'no-reasoning'}}});
+  store.getState().send(codex.id,'Normal user message',[]);
+  await wait(()=>calls.filter(([kind])=>kind==='send').length>beforeCommands);
+  assert.equal(calls.filter(([kind])=>kind==='send').at(-1)[1].effort,null,'clear unsupported persisted reasoning effort');
+  assert.equal(store.getState().threads[codex.id].codex.questions,null,'new user input dismisses async questions');
+  // First-send preparation must finish before a mid-turn note reaches the transport.
+  const originalGit=window.desk.gitStatus;let releaseGit;
+  window.desk.gitStatus=()=>new Promise(resolve=>{releaseGit=resolve});
+  const sending={...codex,id:'preparing-steer',status:'idle',entries:initial.entries,agents:{},handoff:{from:'claude'},chain:undefined,sessionId:undefined};
+  store.setState({threads:{[sending.id]:sending},activeId:sending.id,settings:{...store.getState().settings,followUp:'steer'}});
+  const beforePrepare=calls.filter(([kind])=>kind==='send').length;
+  store.getState().send(sending.id,'Initial prepared message',[]);store.getState().send(sending.id,'Note during thinking',[]);
+  assert.equal(calls.filter(([kind])=>kind==='send').length,beforePrepare);
+  let steer=()=>store.getState().threads[sending.id].entries.flatMap(e=>e.kind==='turn'?e.items:[]).find(i=>i.kind==='steer');
+  assert.equal(steer().text,'Note during thinking');assert.equal(steer().delivery,'sending');
+  releaseGit({files:[]});await wait(()=>calls.filter(([kind])=>kind==='send').length>=beforePrepare+2);
+  const ordered=calls.filter(([kind])=>kind==='send').slice(beforePrepare).map(([,p])=>p);assert.equal(ordered[0].text,'Initial prepared message');assert.equal(ordered[1].text,'Note during thinking');assert.equal(ordered[1].uuid,steer().id);
+  event({threadId:sending.id,ev:{type:'step'}});assert.equal(steer().delivery,'sending','unrelated model steps are not send acknowledgments');
+  event({threadId:sending.id,ev:{type:'message.receipt',id:steer().id,status:'accepted'}});assert.equal(steer().delivery,'accepted');
+  event({threadId:sending.id,ev:{type:'message.receipt',id:'unrelated-id',status:'failed',error:'ignored'}});assert.equal(steer().delivery,'accepted');
+  const oldId=steer().id;event({threadId:sending.id,ev:{type:'message.receipt',id:oldId,status:'failed',error:'Fixture transport failure'}});assert.equal(store.getState().threads[sending.id].status,'running');assert.equal(steer().delivery,'failed');
+  store.getState().retrySteer(sending.id,oldId);await wait(()=>calls.filter(([kind])=>kind==='send').length===beforePrepare+3);assert.notEqual(steer().id,oldId);assert.equal(steer().text,'Note during thinking');
+  const newId=steer().id;event({threadId:sending.id,ev:{type:'message.receipt',id:newId,status:'consumed'}});event({threadId:sending.id,ev:{type:'message.receipt',id:newId,status:'accepted'}});assert.equal(steer().delivery,'consumed');
+  window.desk.gitStatus=originalGit;
+  console.log('PASS mid-turn immediate visibility, ordered preparation, correlated receipts, failure isolation and retry');
+  window.desk.nativeHistoryPaging=false;window.desk.call=priorCall;
+  console.log('PASS: forks, aliases, hot switch, handoff, rewind across providers, agent history, reopen ordering, stale run callbacks, cold-start selector, native history pages and selected helper paging');
 } finally {
   await vite.close();
 }

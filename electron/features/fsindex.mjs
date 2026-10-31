@@ -110,6 +110,12 @@ export function getIndex(cwd, force = false) {
 }
 
 export function register(ctx) {
+  ctx.handle('fs:attachment', async (file) => {
+    const name = path.basename(file);
+    const mediaType = ({ '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' })[path.extname(file).toLowerCase()];
+    if (!mediaType || (await fsp.stat(file)).size > 20 * 1024 * 1024) throw new Error('Unsupported or oversized image attachment');
+    return { name, mediaType, data: (await fsp.readFile(file)).toString('base64') };
+  });
   ctx.handle('fs:index', async (cwd, opts) => {
     if (typeof cwd !== 'string' || !cwd) return { entries: [], git: false, truncated: false };
     const st = await fsp.stat(cwd).catch(() => null);

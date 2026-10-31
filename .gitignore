@@ -3,3 +3,8 @@ dist/
 release/
 *.log
 .vite/
+.tools/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/
+dist-native/

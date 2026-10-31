@@ -1,3 +1,4 @@
+import { providerEntries } from '../lib/providers';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -42,7 +43,7 @@ export function ProviderPicker({ thread }: { thread: Thread }) {
   const providers = useStore((s) => s.providers);
   const switchProvider = useStore((s) => s.switchProvider);
   const close = useCallback(() => setOpen(false), []);
-  const list = Object.entries(providers) as [ProviderId, (typeof providers)[string]][];
+  const list = providerEntries(providers);
   if (list.length < 2) return null;
   const started = thread.entries.length > 0;
   const label = providers[thread.provider]?.label ?? thread.provider;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-duet-invoke"
+description = "Enables the duet_invoke command without any pre-configured scope."
+commands.allow = ["duet_invoke"]
+
+[[permission]]
+identifier = "deny-duet-invoke"
+description = "Denies the duet_invoke command without any pre-configured scope."
+commands.deny = ["duet_invoke"]

@@ -39,6 +39,8 @@ import { AgentMark } from './AgentMark';
 import { askConfirm } from '../lib/dialog';
 import { detachThread, isDetachedWindow } from '../features/detach/detach';
 import { t } from '../i18n';
+import { MarkdownContext } from './Markdown';
+import { CodexControls } from './CodexControls';
 
 const suggestions = () => [
   { icon: ScanSearch, text: t('thread.suggestArchitecture') },
@@ -176,6 +178,7 @@ function Header({ thread, changes, changesOpen, split }: { thread: Thread; chang
       )}
       <ChaptersMenu thread={thread} />
       {thread.cwd && <OpenIn cwd={thread.cwd} />}
+      {thread.provider==='codex'&&window.desk.nativeHistoryPaging===true&&<CodexControls thread={thread}/>}
       {(['files', 'terminal'] as const).map((k) => (
         <button
           key={k}
@@ -390,7 +393,7 @@ function EarlierParts({ thread, scrollRef }: { thread: Thread; scrollRef: React.
         {t('thread.showEarlierPart')}
         <span className="muted">· {t('thread.partsLeft', { n: left })}</span>
       </button>
-      {left > 1 && (
+      {left > 1 && window.desk.nativeHistoryPaging !== true && (
         <button className="pill sm" disabled={thread.loading} onClick={() => load(true)}>
           {t('thread.loadAll')}
         </button>
@@ -566,7 +569,7 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
   const { visible, hidden, expand } = useEntryWindow(thread, scrollRef, atBottom);
 
   return (
-    <div className="thread">
+    <MarkdownContext.Provider value={thread.cwd}><div className="thread">
       <Header thread={thread} changes={changes} changesOpen={changesOpen && focused} split={split} />
       <div className="thread-body">
         <div className="thread-main">
@@ -630,6 +633,6 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
           )}
         </motion.aside>
       </div>
-    </div>
+    </div></MarkdownContext.Provider>
   );
 }

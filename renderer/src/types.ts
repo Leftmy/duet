@@ -1,7 +1,7 @@
 import type { ProviderId } from './events';
 
 export type { ProviderId };
-export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 export type PermMode = 'default' | 'acceptEdits' | 'auto' | 'bypassPermissions' | 'plan';
 export type ThemePref = 'system' | 'dark' | 'light';
 
@@ -32,6 +32,8 @@ export interface Project {
 }
 
 export interface SessionInfo {
+  /** Rust history page cursor: earlier whole turns within this session/segment. */
+  cursor?: number;
   sessionId: string;
   /** Agent that owns the session (Claude when missing). */
   provider?: ProviderId;
@@ -117,11 +119,15 @@ export interface SteerItem {
   text: string;
   images?: ImageAttachment[];
   delivered: boolean;
+  delivery?:'sending'|'accepted'|'consumed'|'failed'|'cancelled';
+  error?:string;
 }
 
 export type Item = TextItem | ThinkingItem | ToolItem | NoticeItem | AgentMessageItem | AgentEventItem | SteerItem;
 
 export interface AgentRun {
+  runId?: string;
+  parentId?: string;
   id: string;
   name: string;
   type?: string;
@@ -142,6 +148,8 @@ export interface AgentRun {
   toolUses: number;
   historical?: boolean;
   transcriptLoaded?: boolean;
+  transcriptCursor?: number;
+  transcriptSession?: {sessionId: string; provider: ProviderId};
 }
 
 export interface Turn {
@@ -247,6 +255,17 @@ export interface BrowserState {
   loading: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
+  tabs?: BrowserTab[];
+  activeTabId?: string;
+  sleeping?: boolean;
+  sleepReason?: string;
+  pinned?: boolean;
+  sleepReport?: { slept: number; skipped: number };
+}
+
+export interface BrowserTab extends BrowserState {
+  id: string;
+  protectedReason?: string | null;
 }
 
 export interface WorktreeInfo {
@@ -260,6 +279,8 @@ export interface WorktreeInfo {
 }
 
 export interface Thread {
+  codex?: {goal?:import('./events').CodexGoal|null;diff?:string;title?:string;settings?:Record<string,any>;questions?:{id:string;items:{title:string;options:string[]|null}[]}|null};
+  serviceTier?:string;
   /** Earlier parts of a conversation continued after context ran out (newest first) and how many are loaded. */
   chain?: SessionInfo[];
   chainLoaded?: number;

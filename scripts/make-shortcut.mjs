@@ -15,13 +15,12 @@ if (process.platform === 'win32') {
 }
 
 if (process.platform !== 'linux') {
-  console.error('Shortcuts are made for Windows and Linux; on macOS build the app with electron-builder instead.');
+  console.error('Shortcuts are supported on Windows and Linux.');
   process.exit(1);
 }
 
-const electron = path.join(app, 'node_modules', 'electron', 'dist', 'electron');
-if (!fs.existsSync(electron)) throw new Error(`Electron not found. Run 'npm install' in ${app} first.`);
-if (!fs.existsSync(path.join(app, 'dist', 'index.html'))) throw new Error(`UI not built. Run 'npm run build' in ${app} first.`);
+const native = path.join(app, 'release', 'native', 'duet-native');
+if (!fs.existsSync(native)) throw new Error(`Native build not found. Run 'npm run native:build' in ${app} first.`);
 
 const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
 const dir = path.join(dataHome, 'applications');
@@ -36,7 +35,7 @@ fs.writeFileSync(
     'Type=Application',
     'Name=Duet',
     'Comment=Desktop UI for coding agents',
-    `Exec=${q(electron)} ${q(app)} %U`,
+    `Exec=${q(native)} %U`,
     `Path=${app}`,
     `Icon=${path.join(app, 'build', 'icon.png')}`,
     'Terminal=false',

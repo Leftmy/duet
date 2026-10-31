@@ -19,5 +19,7 @@
   "working": "Working",
   "result": "Result",
   "empty": "No agents have been started in this chat yet",
-  "collapse": "Hide the conversation (show all agents)"
+  "collapse": "Hide the conversation (show all agents)",
+  "sendMessage": "Send message",
+  "messagePlaceholder": "Message this agent; busy agents queue it"
 }

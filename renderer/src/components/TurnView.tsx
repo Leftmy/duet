@@ -60,7 +60,7 @@ function Notice({ item }: { item: NoticeItem }) {
   );
 }
 
-export const ItemView = memo(function ItemView({ item, live, cwd }: { item: Item; live: boolean; cwd: string }) {
+export const ItemView = memo(function ItemView({ item, live, cwd,threadId }: { item: Item; live: boolean; cwd: string;threadId?:string }) {
   switch (item.kind) {
     case 'text':
       return <StreamText item={item} live={live} />;
@@ -81,11 +81,11 @@ export const ItemView = memo(function ItemView({ item, live, cwd }: { item: Item
       return <AgentEventRow item={item} />;
     case 'steer':
       return (
-        <div className="steer-row">
+        <div className="steer-row" data-steer-id={item.id} data-delivery={item.delivery??(item.delivered?'accepted':'sending')}>
           <div className="steer-bubble">
             <div className="steer-label">
               <CornerDownRight size={12} />
-              {item.delivered ? t('turn.steerDelivered') : t('turn.steerPending')}
+              {t('turn.'+(item.delivery==='failed'?'steerFailed':item.delivery==='cancelled'?'steerCancelled':item.delivery==='consumed'?'steerConsumed':item.delivered?'steerDelivered':'steerPending'))}
             </div>
             {item.images && item.images.length > 0 && (
               <div className="bubble-images">
@@ -95,6 +95,8 @@ export const ItemView = memo(function ItemView({ item, live, cwd }: { item: Item
               </div>
             )}
             {item.text && <div className="bubble-text">{item.text}</div>}
+            {item.error&&<div className="small tone-danger" role="alert">{item.error}</div>}
+            {threadId&&(item.delivery==='failed'||item.delivery==='cancelled')&&<button className="btn ghost" onClick={()=>useStore.getState().retrySteer(threadId,item.id)}>{t('turn.steerRetry')}</button>}
           </div>
         </div>
       );
@@ -120,7 +122,7 @@ function CopyBtn({ text }: { text: string }) {
 
 function splitTrailing(items: Item[]) {
   let i = items.length;
-  while (i > 0 && (items[i - 1].kind === 'text' || items[i - 1].kind === 'notice' || items[i - 1].kind === 'agentevent')) i--;
+  while (i > 0 && (items[i - 1].kind === 'text' || items[i - 1].kind === 'notice' || items[i - 1].kind === 'agentevent'||items[i-1].kind==='steer')) i--;
   return { steps: items.slice(0, i), tail: items.slice(i) };
 }
 
@@ -130,7 +132,8 @@ export const TurnView = memo(function TurnView({ turn, threadId, cwd, activity }
   const live = !turn.done;
   const split = splitTrailing(turn.items);
   // Chapters and task suggestions stay visible even when the turn's steps are collapsed.
-  const pinned = (x: Item) => x.kind === 'tool' && (x.name === CHAPTER_TOOL || x.name === TASK_TOOL);
+  const pinned = (x: Item) => x.kind==='steer'||(x.kind === 'tool' && (x.name === CHAPTER_TOOL || x.name === TASK_TOOL));
+  const followups=split.steps.filter(x=>x.kind==='steer');
   const steps = split.steps.filter((x) => !pinned(x));
   const tail = split.tail;
   const chapters = split.steps.filter((x) => x.kind === 'tool' && x.name === CHAPTER_TOOL);
@@ -156,7 +159,7 @@ export const TurnView = memo(function TurnView({ turn, threadId, cwd, activity }
       {collapsible ? (
         <>
           {chapters.map((it) => (
-            <ItemView key={it.id} item={it} live={false} cwd={cwd} />
+            <ItemView key={it.id} item={it} live={false} cwd={cwd} threadId={threadId} />
           ))}
           <button className={`worked ${expanded ? 'is-open' : ''}`} onClick={() => setExpanded((v) => !v)}>
             <span>{workedLabel}</span>
@@ -167,7 +170,7 @@ export const TurnView = memo(function TurnView({ turn, threadId, cwd, activity }
               <motion.div className="worked-body" {...collapse}>
                 <div className="items">
                   {steps.map((it) => (
-                    <ItemView key={it.id} item={it} live={false} cwd={cwd} />
+                    <ItemView key={it.id} item={it} live={false} cwd={cwd} threadId={threadId} />
                   ))}
                 </div>
               </motion.div>
@@ -175,11 +178,12 @@ export const TurnView = memo(function TurnView({ turn, threadId, cwd, activity }
           </AnimatePresence>
           <div className="worked-rule" />
           <div className="items">
+            {followups.map(it=><ItemView key={it.id} item={it} live={false} cwd={cwd} threadId={threadId}/>)}
             {tail.map((it) => (
-              <ItemView key={it.id} item={it} live={false} cwd={cwd} />
+              <ItemView key={it.id} item={it} live={false} cwd={cwd} threadId={threadId} />
             ))}
             {tasks.map((it) => (
-              <ItemView key={it.id} item={it} live={false} cwd={cwd} />
+              <ItemView key={it.id} item={it} live={false} cwd={cwd} threadId={threadId} />
             ))}
           </div>
         </>
@@ -187,7 +191,7 @@ export const TurnView = memo(function TurnView({ turn, threadId, cwd, activity }
         <div className="items">
           {turn.items.map((it) => (
             <motion.div key={it.id} {...enter}>
-              <ItemView item={it} live={live} cwd={cwd} />
+              <ItemView item={it} live={live} cwd={cwd} threadId={threadId} />
             </motion.div>
           ))}
         </div>

@@ -218,6 +218,8 @@ function Details({ item, cwd }: { item: ToolItem; cwd?: string }) {
       </div>
     );
   }
+  if(kind==='web'&&item.result)return <div className="detail-card"><Markdown text={item.result.slice(0,20000)}/></div>;
+  if(item.name==='ImageGeneration'&&item.result&&/\.(png|jpe?g|webp|gif)$/i.test(item.result.trim()))return <Markdown text={`![${t('turn.image')}](<${item.result.trim().replace(/>/g,'%3E')}>)`}/>;
   const raw = item.result ?? (item.inputJson || JSON.stringify(item.input, null, 2));
   // Image results are shown as pictures (above the card); drop their text placeholders.
   const body = item.images?.length ? raw.split(`${t('tools.imagePlaceholder')}\n`).join('').split(t('tools.imagePlaceholder')).join('').trim() : raw;

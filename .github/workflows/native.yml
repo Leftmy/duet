@@ -1,0 +1,59 @@
+name: Native Windows and Linux
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Linux WebView and build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf xvfb dbus-x11
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+      - run: rustup default stable
+      - run: npm ci
+      - name: Prepare bundled native CLI
+        run: node --input-type=module -e "import { prepareRuntime } from './scripts/prepare-native.mjs'; await prepareRuntime();"
+      - run: npm run typecheck
+      - run: npm run test:markdown
+      - run: npm run test:chat
+      - run: npm run test:agents
+      - run: npm run test:native-ownership
+      - run: cargo test --locked --lib --manifest-path src-tauri/Cargo.toml
+      - run: cargo build --locked --manifest-path src-tauri/Cargo.toml --examples
+      - run: npm run test:rust-core
+      - run: npm run test:antigravity
+      - run: npm run test:gemini
+      - run: npm run build
+      - name: Compile native shell
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml
+      - name: WebView2 integration
+        if: runner.os == 'Windows'
+        run: node scripts/native-inspect.mjs --fixtures
+      - name: WebKitGTK integration
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dbus-run-session -- npm run test:native-linux
+      - name: Package system-native app
+        run: npm run native:package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: duet-native-${{ runner.os }}
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error

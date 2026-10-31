@@ -1,0 +1,5 @@
+{
+  "identifier": "desktop-ui",
+  "windows": ["main", "window-*"],
+  "permissions": ["allow-duet-invoke", "allow-window-control"]
+}

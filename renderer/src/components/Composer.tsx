@@ -14,6 +14,7 @@ import { spring } from './Popover';
 import { TasksBar } from './TasksBar';
 import { ContextRing } from './ContextRing';
 import { t } from '../i18n';
+import {CodexQuestions} from './CodexQuestions';
 
 
 const NO_COMMANDS: { name: string; description: string; argumentHint?: string }[] = [];
@@ -24,7 +25,7 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   const setDraft = useStore((s) => s.setDraft);
   const setDraftImages = useStore((s) => s.setDraftImages);
   const removeQueued = useStore((s) => s.removeQueued);
-  const commands = useStore((s) => (s.providers[thread.provider]?.caps?.slashCommands === false ? NO_COMMANDS : s.commands));
+  const commands = useStore((s) => (s.providers[thread.provider]?.caps?.slashCommands === false ? NO_COMMANDS : s.providers[thread.provider]?.commands??s.commands));
   const agentName = useStore((s) => s.providers[thread.provider]?.label ?? 'Claude');
   const followUp = useStore((s) => s.providers[thread.provider]?.caps?.steer === false ? 'queue' : s.settings.followUp);
   const supportsImages = useStore((s) => s.providers[thread.provider]?.caps?.images !== false);
@@ -113,6 +114,20 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
 
   const hasFiles = (dt: DataTransfer) => Array.from(dt.types).includes('Files');
 
+  useEffect(() => window.desk.subscribe<{ paths: string[] }>('desk:native-drop', async ({ paths }) => {
+    if (!isActive) return;
+    const imagePaths = paths.filter((p) => /\.(png|jpe?g|gif|webp)$/i.test(p));
+    try {
+      if (imagePaths.length && !supportsImages) useStore.getState().toast(t('composer.imagesUnsupported', { name: agentName }), 'error');
+      else if (imagePaths.length) {
+        const attachments = await Promise.all(imagePaths.map((p) => window.desk.call<{name:string;mediaType:string;data:string}>('fs:attachment', p)));
+        setImages((cur) => [...cur, ...attachments.map((a) => ({ ...a, id: uid() }))]);
+      }
+      const others = paths.filter((p) => !imagePaths.includes(p)).map((p) => ({ name: p.split(/[\\/]/).pop() || p, type: '', __duetPath: p }) as unknown as File);
+      if (others.length) await addAnyFiles(others);
+    } catch (error) { useStore.getState().toast(String(error), 'error'); }
+  }), [thread.id, thread.cwd, isActive, supportsImages, agentName]);
+
   const submit = () => {
     if (!text.trim() && !images.length) return;
     if (images.length && !supportsImages) {
@@ -129,6 +144,7 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   return (
     <div className="composer-stack">
       <TasksBar thread={thread} />
+      <CodexQuestions thread={thread}/>
       <AnimatePresence initial={false}>
         {review && review.length > 0 && (
           <motion.div className="review-bar" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, height: 0 }} transition={spring}>

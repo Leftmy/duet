@@ -1,3 +1,4 @@
+import { providerEntries } from '../lib/providers';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { BarChart3, CalendarClock, Info, ScrollText, SquareSlash, Wand2, Keyboard, Monitor, Moon, Plug, SlidersHorizontal, Sparkles, Sun, User, X, Send } from 'lucide-react';
@@ -188,6 +189,12 @@ export function SettingsModal() {
                       <Row title={t('settings.notifications')} hint={t('settings.notificationsHint')}>
                         <Toggle on={settings.notifications} onChange={(notifications) => setSettings({ notifications })} />
                       </Row>
+                      <Row title={t('settings.idleAgents')} hint={t('settings.idleAgentsHint')}>
+                        <select className="input select" value={settings.idleAgentMinutes} onChange={(e) => setSettings({ idleAgentMinutes: Number(e.target.value) })}>
+                          <option value={0}>{t('settings.idleNever')}</option>
+                          {[1, 5, 15, 30].map((minutes) => <option key={minutes} value={minutes}>{t('settings.idleMinutes', { minutes })}</option>)}
+                        </select>
+                      </Row>
                       <Row
                         title={t('settings.followUp')}
                         hint={t('settings.followUpHint')}
@@ -215,7 +222,7 @@ export function SettingsModal() {
                           <Select<ProviderId>
                             value={settings.provider}
                             onChange={(provider) => setSettings({ provider })}
-                            options={(Object.entries(providers) as [ProviderId, ProviderProbe][]).filter(([, p]) => p.available).map(([v, p]) => ({ v, label: p.label }))}
+                            options={providerEntries(providers).filter(([, p]) => p.available).map(([v, p]) => ({ v, label: p.label }))}
                           />
                         </Row>
                       )}
@@ -289,7 +296,7 @@ export function SettingsModal() {
                         <span className="muted small">{t('settings.enabled')}</span>
                       </Row>
                       <p className="muted small">{t('settings.claudeFooter')}</p>
-                      {(Object.entries(providers) as [ProviderId, ProviderProbe][])
+                      {providerEntries(providers)
                         .filter(([id]) => id !== 'claude')
                         .map(([id, p]) => (
                           <div key={id}>

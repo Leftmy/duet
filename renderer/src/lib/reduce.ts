@@ -169,6 +169,8 @@ function applyAgent(agents: Record<string, AgentRun>, ev: Extract<DeskEvent, { t
     ...(ev.progress ? { progress: ev.progress } : {}),
     ...(ev.toolUses != null ? { toolUses: ev.toolUses } : {}),
     ...(ev.sessionId ? { sessionId: ev.sessionId } : {}),
+    ...(ev.runId ? { runId: ev.runId } : {}),
+    ...(ev.parentId ? { parentId: ev.parentId } : {}),
   };
   if (ev.prompt && ev.prompt !== base.prompt) {
     next.prompt = ev.prompt;
@@ -245,6 +247,11 @@ function applyAgentEvent(agents: Record<string, AgentRun>, ev: DeskEvent, now: n
   let agent = agents[owner] ?? newAgent(agents, owner, now, historical);
   const isNewTool = ev.type === 'tool' && !agent.items.some((x) => x.id === ev.id);
   agent = editAgentItems(agent, now, (ed) => applyContent(ed, ev, now));
+  if(ev.type==='notice')agent=editAgentItems(agent,now,ed=>{ed.push({kind:'notice',id:uid(),text:ev.code?tr(ev.code,ev.params as any):ev.text??'',tone:ev.tone});return true;});
+  if(ev.type==='status')agent={...agent,progress:ev.activity==='compacting'?tr('reduce.compacting'):ev.activity==='retrying'?tr('reduce.retrying',{attempt:ev.attempt,max:ev.max}):undefined};
+  if(ev.type==='context')agent={...agent,progress:`${ev.usage.percentage}% context`};
+  if(ev.type==='task'&&'description' in ev&&ev.description)agent={...agent,progress:ev.description};
+  if(ev.type==='codex.state'&&ev.state.questions)agent={...agent,progress:ev.state.questions.items.map(q=>q.title).join(' · ')};
   if (isNewTool) agent = { ...agent, toolUses: agent.toolUses + 1 };
   return { ...agents, [owner]: agent };
 }
@@ -329,8 +336,22 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
   // Helper tokens do not edit the lead's history. Preserve its identity for memoized views.
   const agents = applyAgentEvent(t0.agents, ev, now, historical);
   if (agents) return agents === t0.agents ? t0 : { ...t0, agents };
+  if(ev.type==='message.receipt'){
+    let changed=false;
+    const entries=t0.entries.map(entry=>{
+      if(entry.kind!=='turn')return entry;
+      let patched=false;
+      const items=entry.items.map(item=>{
+        if(item.kind!=='steer'||item.id!==ev.id||item.delivery==='consumed'||(ev.status==='accepted'&&item.delivery&&item.delivery!=='sending'))return item;
+        patched=true;return{...item,delivery:ev.status,delivered:ev.status==='accepted'||ev.status==='consumed',error:ev.error};
+      });
+      if(!patched)return entry;changed=true;return{...entry,items};
+    });
+    return changed?{...t0,entries}:t0;
+  }
   if (ev.type === 'session') return ev.sessionId === t0.sessionId ? t0 : { ...t0, sessionId: ev.sessionId };
   if (ev.type === 'context') return { ...t0, context: ev.usage };
+  if(ev.type==='codex.state')return {...t0,codex:{...t0.codex,...ev.state},...(ev.state.title?{title:ev.state.title}:{})};
   if (ev.type === 'status') return {
     ...t0,
     activity: ev.activity === 'compacting' ? tr('reduce.compacting') : ev.activity === 'retrying' ? tr('reduce.retrying', { attempt: ev.attempt, max: ev.max }) : undefined,
@@ -347,6 +368,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
 
   switch (ev.type) {
     case 'step':
+      if(!historical)t.status='running';
       t.activity = undefined;
       // The agent can start a turn on its own (e.g. reacting to a finished background task).
       t.status = 'running';
@@ -354,8 +376,8 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
       for (let e = t.entries.length - 1; e >= 0; e--) {
         const entry = t.entries[e];
         if (entry.kind !== 'turn') break;
-        if (entry.items.some((x) => x.kind === 'steer' && !x.delivered)) {
-          t.entries[e] = { ...entry, items: entry.items.map((x) => (x.kind === 'steer' && !x.delivered ? { ...x, delivered: true } : x)) };
+        if (entry.items.some((x) => x.kind === 'steer' && !x.delivery && !x.delivered)) {
+          t.entries[e] = { ...entry, items: entry.items.map((x) => (x.kind === 'steer' && !x.delivery && !x.delivered ? { ...x, delivered: true } : x)) };
         }
       }
       ed.get();
@@ -387,6 +409,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
       } else if (ed.peek()) ed.get().lastUuid = ev.uuid;
       break;
     case 'user': {
+      if(t.codex?.questions)t.codex={...t.codex,questions:null};
       closeTurn(t.entries, true);
       t.entries.push({ kind: 'user', id: uid(), uuid: ev.uuid, text: ev.text, images: ev.images, ts: now, ...(ev.summary ? { summary: true } : {}) });
       break;
@@ -412,6 +435,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
         turn.endedAt = now;
         turn.durationMs = ev.durationMs ?? now - turn.startedAt;
         turn.interrupted = Boolean(t.stopRequested);
+          if(t.stopRequested)turn.items=turn.items.map(item=>item.kind==='steer'&&item.delivery&&['sending','accepted'].includes(item.delivery)?{...item,delivery:'cancelled',delivered:false}:item);
         if (ev.isError && !t.stopRequested) turn.error = (ev.error || tr('common.error')).slice(0, 600);
         turn.items = turn.items.map((x) => (x.kind === 'tool' && x.status === 'running' ? { ...x, status: 'error' as const, endedAt: now } : x));
       }
