@@ -24,6 +24,7 @@ import { basename } from '../lib/format';
 import { collapse } from './ToolRow';
 import { askConfirm } from '../lib/dialog';
 import { t } from '../i18n';
+import { ResizeHandle } from './ResizeHandle';
 
 function languageFor(path: string): Extension {
   const ext = path.toLowerCase().split('.').pop() ?? '';
@@ -87,6 +88,7 @@ const TreeNode = memo(function TreeNode({ path, name, dir, dim, depth }: { path:
 });
 
 export function FilesPanel({ thread }: { thread: Thread }) {
+  const treeRef = useRef<HTMLDivElement>(null);
   const files = useStore((s) => s.editorFiles);
   const active = useStore((s) => s.editorActive);
   const location = useStore((s) => s.editorLocation);
@@ -286,13 +288,15 @@ export function FilesPanel({ thread }: { thread: Thread }) {
       )}
       <div className="files-body">
         {tree && (
-          <div className="files-tree">
+          <div className="files-tree" ref={treeRef}>
             {roots.map((r) => (
               <TreeNode key={r.path} {...r} depth={0} />
             ))}
             {!thread.cwd && <div className="muted small" style={{ padding: 10 }}>{t('files.noProject')}</div>}
           </div>
         )}
+        {tree && <ResizeHandle id="filesTree" label={t('layout.tree')} target={treeRef} variable="--tree-size" defaultSize={210}
+          bounds={width => [Math.min(100,width*.3),Math.max(Math.min(100,width*.3),width-Math.min(220,width*.5))]}/>}
         <div className="files-editor">
           <div ref={hostRef} className="cm-host" style={{ display: activeBuf && !activeBuf.error ? 'block' : 'none' }} />
           {!active && <div className="changes-empty muted">{t('files.empty')}</div>}

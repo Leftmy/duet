@@ -9,6 +9,14 @@ if (!location.hash.startsWith('#detached=')) (async () => {
     assert(info.legacyNodeCore===false&&info.remainingNodeChannels.length===0,'all commands are native Rust');
     const providers=Object.values(window.__deskStore.getState().providers);
     assert(providers.length===3&&providers.every(p=>p.available),'three enabled CLI fixtures initialize through the UI');
+    await wait(()=>document.querySelector('[data-resize="sidebar"]'));
+    const sidebarBefore=document.querySelector('.sidebar').getBoundingClientRect().width;
+    document.querySelector('[data-resize="sidebar"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+    await wait(()=>document.querySelector('.sidebar').getBoundingClientRect().width>sidebarBefore+12);
+    assert(Math.abs((await window.desk.getSettings()).layoutSizes.sidebar-document.querySelector('.sidebar').getBoundingClientRect().width)<2,'native Linux resizing persists to settings');
+    document.querySelector('[data-resize="sidebar"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+    await wait(()=>Math.abs(document.querySelector('.sidebar').getBoundingClientRect().width-264)<2);
+    assert(true,'native Linux resize reset restores default width');
     const file='/tmp/duet-native-linux-file.txt';await window.desk.filesWrite(file,'NATIVE_LINUX_FILE_OK');assert((await window.desk.filesRead(file)).text==='NATIVE_LINUX_FILE_OK','native Linux file read/write');
     const output=await new Promise(async(resolve,reject)=>{let data='';const id='native-linux-pty';const off=window.desk.onTermData(e=>{if(e.id===id)data+=e.data});const exit=window.desk.onTermExit(e=>{if(e.id===id){off();exit();resolve(data)}});try{await window.desk.termCreate({id,cwd:'/tmp',cols:80,rows:24});await window.desk.termWrite(id,"printf 'NATIVE_LINUX_PTY_OK\\n'; exit\r")}catch(e){off();exit();reject(e)}});
     assert(output.includes('NATIVE_LINUX_PTY_OK'),'native Linux PTY input/output/exit');

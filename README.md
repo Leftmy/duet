@@ -93,6 +93,7 @@ and terminal libraries at startup. See [native cleanup](docs/NATIVE_CLEANUP.md) 
 - Model, effort and permission mode, all switchable mid-session
 - Queued follow-ups and steering while the agent works
 - Context ring with compaction; rewind to any message; forks
+- Drag sidebar, right panel, file tree and split-chat dividers to resize. Sizes are saved, separately for each panel tab. Double-click a divider to reset; arrow keys adjust it and Escape cancels a drag.
 - Short auto-generated chat titles
 - Images, `@`-mentions of project files, slash commands and skills
 - Split view and chats in separate windows

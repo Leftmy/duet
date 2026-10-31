@@ -1,0 +1,7 @@
+{
+  "sidebar": "Sidebar width",
+  "panel": "Panel width",
+  "split": "Chat widths",
+  "tree": "File tree width",
+  "help": "Drag to resize. Double-click to reset. Arrow keys adjust; Escape cancels."
+}

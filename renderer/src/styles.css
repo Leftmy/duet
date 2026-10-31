@@ -180,6 +180,8 @@ button {
 }
 
 .sidebar {
+  width: var(--sidebar-size, 264px);
+  max-width: min(600px, max(40%, calc(100% - 320px)));
   flex-shrink: 0;
   overflow: hidden;
   background: var(--bg-side);
@@ -198,8 +200,23 @@ button {
 
 /* ---------- sidebar ---------- */
 
+.sidebar.is-collapsed, .changes.is-collapsed { width: 0; border: 0; }
+.resize-handle { flex: 0 0 6px; position: relative; z-index: 3; outline: none; touch-action: none; -webkit-app-region: no-drag; }
+.resize-x { cursor: col-resize; align-self: stretch; }
+.resize-y { cursor: row-resize; height: 6px; width: 100%; }
+.resize-handle::before { content: ''; position: absolute; background: var(--border); transition: background-color .12s; }
+.resize-x::before { width: 1px; top: 0; bottom: 0; left: 2px; }
+.resize-y::before { height: 1px; left: 0; right: 0; top: 2px; }
+.resize-handle:hover::before, .resize-handle:focus-visible::before { background: var(--accent); }
+.resize-x:hover::before, .resize-x:focus-visible::before { width: 3px; left: 1px; }
+.resize-y:hover::before, .resize-y:focus-visible::before { height: 3px; top: 1px; }
+body[data-resizing]::after { content: ''; position: fixed; inset: 0; z-index: 99999; }
+body[data-resizing='x'], body[data-resizing='x']::after { cursor: col-resize !important; }
+body[data-resizing='y'], body[data-resizing='y']::after { cursor: row-resize !important; }
+body[data-resizing] * { user-select: none !important; }
+
 .sidebar-inner {
-  width: 264px;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -578,13 +595,15 @@ button {
   flex-direction: column;
 }
 .changes {
+  width: var(--panel-size, 460px);
+  max-width: max(50%, calc(100% - 320px));
   flex-shrink: 0;
   overflow: hidden;
   border-left: 1px solid var(--border);
   background: var(--bg-side);
 }
 .changes-inner {
-  width: 460px;
+  width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -3029,7 +3048,8 @@ kbd.key {
   display: flex;
 }
 .files-tree {
-  width: 210px;
+  width: var(--tree-size, 210px);
+  max-width: max(50%, calc(100% - 220px));
   flex-shrink: 0;
   overflow: auto;
   border-right: 1px solid var(--border);
@@ -3640,8 +3660,9 @@ kbd.key {
   height: 100%;
   position: relative;
 }
-.split-pane + .split-pane {
-  border-left: 1px solid var(--border);
+.split-pane:first-child {
+  flex: 0 0 auto;
+  width: clamp(20%, var(--split-size, 50%), 80%);
 }
 .split-pane::after {
   content: '';

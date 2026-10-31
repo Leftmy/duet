@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type RefObject } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { OctagonX, PanelLeft, RefreshCw, X } from 'lucide-react';
 import { useStore } from './store';
 import type { ProviderId } from './types';
 import { t, useLang } from './i18n';
 import { Sidebar } from './components/Sidebar';
+import { ResizeHandle } from './components/ResizeHandle';
 import { ThreadView } from './components/ThreadView';
 import { spring } from './components/Popover';
 import { ConfirmDialog, RewindDialog } from './components/Dialogs';
@@ -31,11 +32,12 @@ function useTheme() {
   }, [pref]);
 }
 
-function SplitPane({ id, focused }: { id: string; focused: boolean }) {
+function SplitPane({ id, focused, paneRef }: { id: string; focused: boolean; paneRef?: RefObject<HTMLDivElement | null> }) {
   const thread = useStore((s) => s.threads[id]);
   if (!thread) return null;
   return (
     <motion.div
+      ref={paneRef}
       className={`split-pane ${focused ? 'is-focused' : ''}`}
       initial={{ opacity: 0, scale: 0.985 }}
       animate={{ opacity: 1, scale: 1 }}
@@ -48,7 +50,17 @@ function SplitPane({ id, focused }: { id: string; focused: boolean }) {
   );
 }
 
-/** The `/` menu: built-in + user commands from the (cached) probe, plus project commands of the active chat's folder. */
+function SplitLayout({ ids, activeId }: { ids: string[]; activeId: string }) {
+  const first = useRef<HTMLDivElement>(null);
+  return <div className="split">
+    <SplitPane id={ids[0]} focused={ids[0] === activeId} paneRef={first}/>
+    <ResizeHandle id="split" label={t('layout.split')} target={first} variable="--split-size" defaultSize={50} percent
+      bounds={width => { const min=Math.min(280,width*.35)/width*100; return [min,100-min]; }}/>
+    <SplitPane id={ids[1]} focused={ids[1] === activeId}/>
+  </div>;
+}
+
+/** The `/` menu: built-in + user commands from the cached probe and active project. */
 function useProjectCommands() {
   const cwd = useStore((s) => s.threads[s.activeId]?.cwd ?? '');
   useEffect(() => onCommandsChanged((e) => reprobeCommands(e.cwd ?? cwd)), [cwd]);
@@ -72,6 +84,7 @@ function useProjectCommands() {
 }
 
 export function App() {
+  const sidebarRef = useRef<HTMLElement>(null);
   const activeId = useStore((s) => s.activeId);
   const thread = useStore((s) => s.threads[s.activeId]);
   const sidebarOpen = useStore((s) => s.settings.sidebarOpen);
@@ -172,16 +185,14 @@ export function App() {
         <span className="titlebar-name">Duet</span>
       </div>
       <div className="body">
-        <motion.aside className="sidebar" initial={false} animate={{ width: sidebarOpen ? 264 : 0 }} transition={spring}>
+        <aside ref={sidebarRef} className={`sidebar ${sidebarOpen ? '' : 'is-collapsed'}`}>
           <Sidebar />
-        </motion.aside>
+        </aside>
+        {sidebarOpen && <ResizeHandle id="sidebar" label={t('layout.sidebar')} target={sidebarRef} variable="--sidebar-size" defaultSize={264}
+          bounds={width => [Math.min(180,width*.4),Math.max(Math.min(180,width*.4),Math.min(600,width-320))]}/>}
         <main className="main">
           {split ? (
-            <div className="split">
-              {split.map((id) => (
-                <SplitPane key={id} id={id} focused={id === activeId} />
-              ))}
-            </div>
+            <SplitLayout ids={split} activeId={activeId}/>
           ) : (
             thread && (
               <motion.div

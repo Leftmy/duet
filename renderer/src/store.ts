@@ -36,6 +36,7 @@ async function historyPage(part: SessionInfo) {
 const byEntryTime = (a: Entry, b: Entry) => (a.kind === 'user' ? a.ts : a.startedAt) - (b.kind === 'user' ? b.ts : b.startedAt);
 
 interface Settings {
+  layoutSizes?: Record<string, number>;
   language: Lang;
   theme: ThemePref;
   /** Agent of new chats. */

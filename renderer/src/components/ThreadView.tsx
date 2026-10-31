@@ -34,6 +34,7 @@ import { ProjectPicker, WorkModePicker, WorktreeChip } from './Pickers';
 import { MenuItem, Popover, spring } from './Popover';
 import { ChangesPanel } from './ChangesPanel';
 import { collectChanges } from '../lib/changes';
+import { ResizeHandle } from './ResizeHandle';
 import { ChaptersMenu } from './SessionItems';
 import { AgentMark } from './AgentMark';
 import { askConfirm } from '../lib/dialog';
@@ -548,6 +549,7 @@ function AgentDivider({ provider }: { provider: ProviderId }) {
 }
 
 export function ThreadView({ thread, focused = true, split = false }: { thread: Thread; focused?: boolean; split?: boolean }) {
+  const panelRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const changesOpen = useStore((s) => s.settings.changesOpen);
   const setSettings = useStore((s) => s.setSettings);
@@ -625,13 +627,15 @@ export function ThreadView({ thread, focused = true, split = false }: { thread: 
             </>
           )}
         </div>
-        <motion.aside className="changes" initial={false} animate={{ width: panelOpen ? panelWidth : 0 }} transition={spring}>
+        {panelOpen && <ResizeHandle key={panelTab} id={`panel.${panelTab}`} label={t('layout.panel')} target={panelRef} variable="--panel-size" defaultSize={panelWidth} direction={-1}
+          bounds={width => [Math.min(240,width*.45),Math.max(Math.min(240,width*.45),width-Math.min(320,width*.5))]}/>}
+        <aside ref={panelRef} className={`changes ${panelOpen ? '' : 'is-collapsed'}`}>
           {panelOpen && (
-            <div className="changes-inner" style={{ width: panelWidth }}>
+            <div className="changes-inner">
               <ChangesPanel thread={thread} onClose={() => setSettings({ changesOpen: false })} />
             </div>
           )}
-        </motion.aside>
+        </aside>
       </div>
     </div></MarkdownContext.Provider>
   );

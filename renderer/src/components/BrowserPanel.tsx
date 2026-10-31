@@ -21,6 +21,12 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
   const [menu, setMenu] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [resizing, setResizing] = useState(Boolean(document.body.dataset.resizing));
+  useEffect(() => {
+    const onResize = (event: Event) => setResizing(Boolean((event as CustomEvent).detail));
+    window.addEventListener('desk:layout-resizing', onResize);
+    return () => window.removeEventListener('desk:layout-resizing', onResize);
+  }, []);
   const native = window.desk.nativeHistoryPaging === true;
   const idle = useStore((s) => s.settings.browserIdleMinutes);
   const dialog = useDialog((s) => Boolean(s.current));
@@ -41,10 +47,10 @@ export function BrowserPanel({ threadId }: { threadId: string }) {
 
   useEffect(() => { if (!editing) setAddress(state.url); }, [state.url, state.activeTabId, editing]);
   useEffect(() => {
-    window.desk.browserSetVisible(!covered && !dialog, threadId).catch((e) => {
+    window.desk.browserSetVisible(!covered && !dialog && !resizing, threadId).catch((e) => {
       if (owner.current === threadId) setError(String(e));
     });
-  }, [covered, dialog, threadId]);
+  }, [covered, dialog, resizing, threadId]);
 
   useLayoutEffect(() => {
     const el = hostRef.current;
