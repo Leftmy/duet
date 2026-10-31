@@ -9,6 +9,7 @@ import { testCodexUI } from './native-codex-ui.mjs';
 import { testTeamUI } from './native-team-ui.mjs';
 import { testSteeringUI } from './native-steering-ui.mjs';
 import { testBrowserUI } from './native-browser-ui.mjs';
+import { testRecoveryUI } from './native-recovery-ui.mjs';
 import { createNativeFixtures } from './native-fixtures.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'duet-native-test-'));
@@ -164,6 +165,7 @@ try{
   await testCodexUI(evaluate,profile);
   await testTeamUI(evaluate);
   await testSteeringUI(evaluate);
+  await testRecoveryUI(evaluate);
   const stress=await evaluate(`(${(async function(){
     const store=window.__deskStore, before=store.getState(), id=before.activeId;
     const entries=Array.from({length:400},(_,n)=>({kind:'turn',id:'native-old'+n,provider:'claude',done:true,startedAt:n,items:[{kind:'text',id:'prior'+n,text:'Previous response',confirmed:true}]}));

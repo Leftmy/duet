@@ -114,7 +114,7 @@
   "statsNoData": "Пока нет данных.",
   "statsByProject": "По проектам",
   "statsLimits": "Лимиты подписки",
-  "aboutIntro": "Duet — личный интерфейс к Claude Code через Agent SDK и вашу подписку.",
+  "aboutIntro": "Duet — интерфейс к Claude Code, Codex и Antigravity через ваши подписки.",
   "updateApp": "Обновить приложение",
   "updateAppHint": "Пересобрать интерфейс из папки проекта и перезапустить окно. Открытые сессии продолжатся после перезапуска.",
   "relaunch": "Перезапустить",

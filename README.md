@@ -60,7 +60,7 @@ the source chat's project at the requested line. See the
 verification and the boundaries of the app-server integration.
 
 For UI regressions under agent load, run `npm run build` and `npm run test:ui`.
-The tests use synthetic events and an isolated Electron profile, with no provider calls.
+The tests use synthetic events; native WebView2/WebKitGTK integration runs in isolated profiles.
 Streaming UI updates are batched, diffs have a time/memory budget, and long transcripts
 mount a bounded tail with earlier messages available on demand. UI errors are recorded
 in `diagnostics.log` under the app's user-data directory. A React recovery view preserves
@@ -69,7 +69,7 @@ running chats and event subscriptions without restarting the core.
 The application runs a Rust core inside Tauri 2: WebView2 on Windows and WebKitGTK on Linux.
 All 121 application commands are handled in Rust, including providers, history, search, Git,
 terminals, schedules and Telegram. There is no persistent Node sidecar or JavaScript SDK adapter.
-Electron is retained for regression comparisons and explicit `legacy:*` commands.
+The previous Electron implementation, Node bridge and JavaScript provider SDK have been removed.
 Idle agent sessions release their client processes after
 five minutes and resume from their saved session on the next message. Running tasks, approvals
 and delegated work are preserved; the timeout is configurable in Settings. Account discovery
@@ -81,9 +81,7 @@ page input, media, downloads and pinning protect against automatic sleep.
 See [browser tabs](docs/BROWSER_TABS.md) for behavior, agent tools and limits.
 The checked `desktop/ipc-ownership.json` inventory prevents commands falling back to the old core.
 The file editor, terminal and settings are loaded on demand instead of parsing their editor
-and terminal libraries at startup. `node scripts/benchmark-shell.mjs` compares the private memory
-of the two initialized shells on Windows, with identical temporary profiles and no agent turns;
-the totals include each shell's child processes.
+and terminal libraries at startup. See [native cleanup](docs/NATIVE_CLEANUP.md) for the current build and test layout.
 
 <table>
 <tr><td valign="top" width="50%">
@@ -251,8 +249,7 @@ Context for an agent switch is read separately from disk with an explicit text b
 |---|---|
 | `src-tauri/src/core/` | Rust providers, history, search, approvals, Git, PTY, settings and automation |
 | `src-tauri/src/` | Tauri entry point, bounded event pump, native browser/media integration |
-| `desktop/` | IPC ownership inventory, window controls and legacy regression adapters |
-| `electron/` | Previous implementation, kept for parser goldens and regression tests |
+| `desktop/` | Native preload, IPC ownership inventory and native window controls |
 | `renderer/src/lib/reduce.ts` | DeskEvent → chat feed |
 | `renderer/src/lib/handoff.ts` | Context passed between agents |
 | `src-tauri/src/core/storage.rs` | Atomic settings and native data (`%APPDATA%\Duet\`) |
@@ -270,21 +267,21 @@ Context for an agent switch is read separately from disk with an explicit text b
 ```bash
 npm run typecheck
 npm run test:chat                                    # chat lifecycle
-npm run test:agents                                  # idle client release/resume guards
+npm run test:native-bridge                           # native IPC and event subscriptions
+npm run test:ui                                      # renderer state and performance
+npm run test:agents                                  # native team coordination
 npm run test:native                                  # Windows: debug native integration
                             # build the Rust test driver first:
 cargo build --locked --manifest-path src-tauri/Cargo.toml --examples
 npm run test:rust-core                               # subprocess protocols + history goldens
 xvfb-run -a dbus-run-session -- npm run test:native-linux # Linux WebKitGTK integration
 node scripts/native-inspect.mjs --packaged            # Windows: portable package integration
-npm run test:antigravity && npm run test:gemini      # fake CLIs, no account needed
 node scripts/smoke-rust-providers.mjs                # real Claude/Codex subscriptions; uses quota
 ```
 
 The native integration test uses an isolated temporary profile. Add `--provider-smoke` to
 exercise a real signed-in Codex subscription and two-turn context (uses your quota and archives
-only the test session). `npm run legacy:start`, `npm run legacy:dev` and `npm run legacy:dist`
-retain the previous Electron implementation for comparisons. Native packages exclude it.
+only the test session). Add `--fixtures` for CI with isolated fake provider CLIs; no subscription or user data is required.
 
 ## Privacy
 
@@ -293,7 +290,7 @@ its settings in its user-data folder.
 
 ## License
 
-[MIT](LICENSE) for Duet's own code. The Claude Agent SDK and the Claude Code binary it brings are
+[MIT](LICENSE) for Duet's own code. The bundled native Claude Code executable is
 proprietary software of Anthropic under [their own terms](https://code.claude.com/docs/en/legal-and-compliance).
 Built installers include that binary, so share the source rather than the builds.
 

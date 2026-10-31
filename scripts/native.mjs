@@ -42,7 +42,7 @@ if (action === 'build' || action === 'package' || action === 'dev') {
 if (action === 'start' || action === 'dev' || action === 'preview') {
   const executable=process.platform === 'win32' ? 'duet-native.exe' : 'duet-native';
   const compiled=path.join(env.CARGO_TARGET_DIR||path.join(root,'src-tauri/target'),action==='dev'?'debug':'release',executable);
-  const candidates=[compiled,path.join(root,'release/native-providers',executable),path.join(root,'release/native-browser',executable),path.join(root,'release/native-steering',executable),path.join(root,'release/native-team',executable),path.join(root,'release/native-codex',executable),path.join(root,'release/native',executable),path.join(root,'release/native-rust-core',executable)];
+  const candidates=[compiled,path.join(root,'release/native-clean',executable),path.join(root,'release/native-providers',executable),path.join(root,'release/native-browser',executable),path.join(root,'release/native-steering',executable),path.join(root,'release/native-team',executable),path.join(root,'release/native-codex',executable),path.join(root,'release/native',executable),path.join(root,'release/native-rust-core',executable)];
   const binary=action==='dev'?compiled:candidates.filter(file=>fs.existsSync(file)).sort((a,b)=>fs.statSync(b).mtimeMs-fs.statSync(a).mtimeMs)[0];
   if (!binary||!fs.existsSync(binary)) throw new Error('Build the native version first: npm run native:build');
   if (action === 'dev') { env.DUET_NATIVE_PROJECT_ROOT = root; }

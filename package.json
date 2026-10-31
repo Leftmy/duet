@@ -1,20 +1,16 @@
 {
   "name": "duet",
   "productName": "Duet",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Desktop UI for coding agents",
   "homepage": "https://github.com/alhimikix/duet",
   "license": "MIT",
   "private": true,
   "type": "module",
-  "main": "electron/main.mjs",
   "scripts": {
     "dev": "node scripts/native.mjs dev",
     "build": "vite build",
     "start": "node scripts/native.mjs start",
-    "legacy:start": "electron .",
-    "legacy:dev": "node scripts/dev.mjs",
-    "legacy:dist": "vite build && electron-builder",
     "native:build": "node scripts/native.mjs build",
     "native:package": "node scripts/native.mjs package",
     "native:dev": "node scripts/native.mjs dev",
@@ -23,24 +19,22 @@
     "typecheck": "tsc --noEmit -p .",
     "test:chat": "node scripts/test-chat-lifecycle.mjs",
     "test:markdown": "node scripts/test-markdown.mjs",
-    "test:agents": "node --test scripts/test-agent-lifecycle.mjs",
+    "test:agents": "node scripts/test-native-teams.mjs",
     "test:native": "node scripts/native-inspect.mjs",
     "test:native-ownership": "node scripts/check-native-ownership.mjs",
     "test:rust-core": "node scripts/test-native-core.mjs && node scripts/test-native-history.mjs && node scripts/test-native-teams.mjs && node scripts/test-native-steering.mjs",
     "test:native-linux": "node scripts/test-native-linux.mjs",
-    "test:ui": "node scripts/test-ui-load.mjs && node scripts/test-ui-runtime.mjs",
-    "test:antigravity": "node --test scripts/test-antigravity.mjs",
-    "test:gemini": "node --test scripts/test-gemini.mjs",
+    "test:ui": "node scripts/test-ui-load.mjs",
     "icon": "node scripts/make-icon.mjs",
     "shortcut": "node scripts/make-shortcut.mjs",
     "dist": "node scripts/native.mjs package",
     "dist:win": "node scripts/native.mjs package",
     "dist:linux": "node scripts/native.mjs package",
     "test:teams": "node scripts/test-native-teams.mjs",
-    "test:steering": "node scripts/test-native-steering.mjs"
+    "test:steering": "node scripts/test-native-steering.mjs",
+    "test:native-bridge": "node --test scripts/test-native-bridge.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.291",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
@@ -68,13 +62,11 @@
     "highlight.js": "^11.12.0",
     "lucide-react": "^1.52.0",
     "motion": "^14.0.0",
-    "node-pty": "^1.1.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -83,63 +75,13 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^44.5.1",
-    "electron-builder": "^26.15.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.3"
   },
-  "build": {
-    "appId": "local.claude-desk",
-    "productName": "Duet",
-    "directories": {
-      "buildResources": "build",
-      "output": "release"
-    },
-    "files": [
-      "dist/**",
-      "electron/**",
-      "build/icon.*",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/@anthropic-ai/claude-agent-sdk-*/**",
-      "node_modules/node-pty/**"
-    ],
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "icon": "build/icon.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Duet",
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
-    },
-    "npmRebuild": false,
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Development",
-      "icon": "build/icon.png",
-      "executableName": "duet",
-      "synopsis": "Desktop UI for coding agents",
-      "desktop": {
-        "entry": {
-          "StartupWMClass": "Duet"
-        }
-      },
-      "maintainer": "Duet <duet@localhost>"
-    },
-    "appImage": {
-      "artifactName": "Duet-${version}-${arch}.AppImage"
-    }
+  "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.291",
+    "@anthropic-ai/claude-agent-sdk-linux-arm64": "0.3.291",
+    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.291",
+    "@anthropic-ai/claude-agent-sdk-win32-arm64": "0.3.291"
   }
 }

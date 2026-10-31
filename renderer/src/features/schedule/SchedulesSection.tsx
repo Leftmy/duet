@@ -28,7 +28,7 @@ import type { Effort } from '../../types';
 import { TelegramControl } from '../telegram/TelegramControl';
 import './schedule.css';
 
-// ---------- types (mirror electron/features/scheduler.mjs) ----------
+// ---------- types (mirror src-tauri/src/core/scheduler.rs) ----------
 
 type SchedPerm = 'acceptEdits' | 'default' | 'bypassPermissions';
 type Schedule = { type: 'interval'; minutes: number } | { type: 'daily'; time: string; days: number[] };

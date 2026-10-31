@@ -1,9 +1,7 @@
 # Multi-agent MCP audit and implementation (0.2.2)
 
 The active implementation is native Rust: `agents.rs`, `collaboration.rs`,
-`rpc.rs` and `toolsets.rs`. Claude exposes it through its SDK-hosted MCP transport;
-Codex exposes the same operations through app-server dynamic tools. The old
-Electron adapter remains available only through explicit `legacy:*` launches.
+`rpc.rs` and `toolsets.rs`. Claude exposes it through its native CLI control transport; Codex exposes the same operations through app-server dynamic tools. The previous desktop adapter has been removed.
 
 ## Weaknesses found and corrected
 

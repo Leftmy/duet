@@ -1,8 +1,6 @@
 // No real providers or user settings: exercise UI state transitions and core run isolation.
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
-import { createCore } from '../electron/core/runs.mjs';
-import { historyEvents } from '../electron/providers/claude/translate.mjs';
 
 const calls = [];
 let event;
@@ -111,7 +109,7 @@ try {
   assert.equal(store.getState().settings.links.fork, undefined);
   const handoff = await buildHandoff({ entries: initial.entries, from: 'codex', to: 'claude', resume: false, cwd: '/project', label: (p) => p });
   assert.match(handoff, /claude-100/, 'fresh fork provider receives full context even if it appears in copied history');
-  const recorded = historyEvents([{ type: 'user', timestamp: '2026-10-18T10:00:00Z', uuid: 'u', message: { content: 'hello' } }]);
+  const recorded = [{ type:'user',uuid:'u',text:'hello',images:[],timestamp:Date.parse('2026-10-18T10:00:00Z') }];
   assert.equal(fromHistory(recorded, 'claude').entries[0].ts, Date.parse('2026-10-18T10:00:00Z'));
 
   // A third provider retains the same logical chat and queues unsupported steering.
@@ -160,38 +158,6 @@ try {
   assert.match(gemSend.instructions, /claude-100/);
   assert.doesNotMatch(gemSend.instructions, /Continue with Google/);
 
-  // A closed run can finish asynchronously after a hot switch. It must not close its successor.
-  const runs = [];
-  const emitted = [];
-  const rolledBack = [];
-  const providers = new Map(['claude', 'codex', 'gemini'].map((id) => [id, {
-    id,
-    caps: { rollback: id === 'claude' ? 'anchor' : 'turns' },
-    rollback: async (sid, n) => rolledBack.push([id, sid, n]),
-    open(spec, sink) {
-      const run = { send() {}, close() {}, spec, sink };
-      runs.push(run);
-      return run;
-    },
-  }]));
-  const core = createCore({ registry: { get: (id) => providers.get(id) }, emit: (...args) => emitted.push(args), browser: { dispose: () => assert.fail('switch must preserve browser') } });
-  core.send({ threadId: 'chat', provider: 'claude', text: 'one', resume: 'a' });
-  runs[0].sink.event({ type: 'turn.end' });
-  core.switchProvider({ threadId: 'chat', provider: 'codex', resume: 'b' });
-  core.send({ threadId: 'chat', provider: 'codex', text: 'two', resume: 'b' });
-  runs[0].sink.closed({ error: 'late close' });
-  runs[0].sink.event({ type: 'session', sessionId: 'obsolete' });
-  assert.equal(core.isRunning('chat'), true);
-  assert.equal(core.providerOf('chat'), 'codex');
-  assert.equal(core.sessionOf('chat'), 'b');
-  assert.equal(emitted.filter(([channel]) => channel === 'agent:closed').length, 0);
-  runs[1].sink.closed();
-  assert.equal(core.isRunning('chat'), false);
-  assert.equal(emitted.filter(([channel]) => channel === 'agent:closed').length, 1);
-  await core.rewindConversation({ threadId: 'chat', provider: 'gemini', sessionId: 'gem-1', dropTurns: 2 });
-  assert.equal(core.providerOf('chat'), 'codex');
-  assert.equal(core.sessionOf('chat'), 'b', 'rolling back another provider must not clobber active provider session');
-  assert.deepEqual(rolledBack, [['gemini', 'gem-1', 2]]);
   // Native history paging: old context stays on disk, and only the selected helper is loaded.
   window.desk.nativeHistoryPaging=true;
   window.desk.loadSessionPage=async(_id,_cwd,_segment,provider,options)=>({events:history(provider,[options?.before?100:300]),previous:options?.before?null:3,totalTurns:3});
@@ -272,7 +238,7 @@ try {
   window.desk.gitStatus=originalGit;
   console.log('PASS mid-turn immediate visibility, ordered preparation, correlated receipts, failure isolation and retry');
   window.desk.nativeHistoryPaging=false;window.desk.call=priorCall;
-  console.log('PASS: forks, aliases, hot switch, handoff, rewind across providers, agent history, reopen ordering, stale run callbacks, cold-start selector, native history pages and selected helper paging');
+  console.log('PASS: forks, aliases, hot switch, handoff, rewind across providers, agent history, reopen ordering, cold-start selector, native history pages and selected helper paging');
 } finally {
   await vite.close();
 }

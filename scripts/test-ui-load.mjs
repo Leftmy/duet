@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { createServer } from 'vite';
-import { createEventBatcher } from '../electron/core/event-batch.mjs';
 
 let deliver, subscriptions = 0;
 const calls = [];
@@ -45,10 +44,9 @@ try {
 
   let commits = 0, batches = 0;
   const off = store.subscribe((s, prev) => { if (s.threads !== prev.threads) commits++; });
-  const queue = createEventBatcher((batch) => { batches++; deliver(batch); });
   const eventStart = performance.now();
-  for (let n = 0; n < 10000; n++) queue.push({ threadId: id, ev: { type: 'text', agent: `a${n % 200}`, id: 'answer', text: 'x', mode: 'delta', timestamp: 1000 + n } });
-  queue.flush();
+  // Native pump deliveries are capped at 128 events; test the renderer's actual batch interface.
+  for(let n=0;n<10000;n+=128){batches++;deliver(Array.from({length:Math.min(128,10000-n)},(_,k)=>({threadId:id,ev:{type:'text',agent:'a'+((n+k)%200),id:'answer',text:'x',mode:'delta',timestamp:1000+n+k}})));}
   off();
   const state = store.getState().threads[id];
   for (const a of Object.values(state.agents)) assert.equal(a.items[0].text, 'x'.repeat(50));
@@ -59,27 +57,6 @@ try {
   await store.getState().init();
   assert.equal(subscriptions, 1, 'view recovery must not duplicate subscriptions');
   assert.strictEqual(store.getState().threads[id], state, 'view recovery must preserve running chats');
-
-  // Coalesce only adjacent fragments with identical ownership; never cross finals or results.
-  const sent = [];
-  const q = createEventBatcher((batch) => sent.push(...batch), { maxText: 10 });
-  const payload = (ev) => ({ threadId: id, ev });
-  q.push(payload({ type: 'text', id: 's', mode: 'delta', text: 'a' }));
-  q.push(payload({ type: 'text', id: 's', mode: 'delta', text: 'b' }));
-  q.push(payload({ type: 'text', id: 's', mode: 'final', text: 'ab' }));
-  q.push(payload({ type: 'text', agent: 'other', id: 's', mode: 'delta', text: 'c' }));
-  q.push(payload({ type: 'tool.delta', id: 'json', json: '{"a":' }));
-  q.push(payload({ type: 'tool.delta', id: 'json', json: '1}' }));
-  q.push(payload({ type: 'tool.output', id: 'log', chunk: 'one' }));
-  q.push(payload({ type: 'tool.output', id: 'log', chunk: 'two' }));
-  q.push(payload({ type: 'turn.end' }));
-  assert.equal(sent[0].ev.text, 'ab');
-  assert.equal(sent[1].ev.mode, 'final');
-  assert.equal(sent[2].ev.agent, 'other');
-  assert.equal(sent[3].ev.json, '{"a":1}');
-  assert.equal(sent[4].ev.chunk, 'onetwo');
-  assert.equal(sent.at(-1).ev.type, 'turn.end');
-  q.flush();
 
   // Terminal events flush preceding tokens before queued follow-ups are dispatched.
   store.setState({ threads: { [id]: { ...state, queue: [{ id: 'queued', text: 'next', images: [] }] } } });

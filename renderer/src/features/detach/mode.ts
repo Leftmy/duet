@@ -24,5 +24,5 @@ export interface DetachInfo {
   draft?: string;
 }
 
-/** Electron wraps IPC errors as "Error invoking remote method 'x': Error: msg" — keep just msg. */
+/** Normalize host error messages, including errors saved by older versions. */
 export const ipcMessage = (e: any) => String(e?.message ?? e).replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, '');

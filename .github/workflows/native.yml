@@ -31,13 +31,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:markdown
       - run: npm run test:chat
-      - run: npm run test:agents
+      - run: npm run test:native-bridge
+      - run: npm run test:ui
       - run: npm run test:native-ownership
       - run: cargo test --locked --lib --manifest-path src-tauri/Cargo.toml
       - run: cargo build --locked --manifest-path src-tauri/Cargo.toml --examples
       - run: npm run test:rust-core
-      - run: npm run test:antigravity
-      - run: npm run test:gemini
       - run: npm run build
       - name: Compile native shell
         run: cargo build --locked --manifest-path src-tauri/Cargo.toml

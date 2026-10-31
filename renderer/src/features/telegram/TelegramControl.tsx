@@ -6,7 +6,7 @@ import { spring } from '../../components/Popover';
 import { t } from '../../i18n';
 import './telegram.css';
 
-// ---------- types (mirror electron/features/telegram.mjs) ----------
+// ---------- types (mirror src-tauri/src/core/telegram.rs) ----------
 
 type TgMode = 'ask' | 'edits' | 'full';
 type TgModel = 'default' | 'sonnet' | 'opus' | 'haiku';

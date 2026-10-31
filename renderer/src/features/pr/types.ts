@@ -1,4 +1,4 @@
-// Shapes returned by the pr: IPC channels (electron/features/pr.mjs).
+// Shapes returned by the pr: IPC channels (src-tauri/src/core/pr.rs).
 
 export type CheckBucket = 'ok' | 'failed' | 'pending' | 'skipped';
 
@@ -53,7 +53,7 @@ export interface FailedLog {
   truncated: boolean;
 }
 
-/** Strips Electron's "Error invoking remote method 'x': Error:" prefix. */
+/** Normalize host error messages, including errors saved by older versions. */
 export function errText(e: unknown): string {
   const s = String((e as any)?.message ?? e);
   return s.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');

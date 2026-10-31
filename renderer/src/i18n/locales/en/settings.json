@@ -110,7 +110,7 @@
   "statsNoData": "No data yet.",
   "statsByProject": "By project",
   "statsLimits": "Plan limits",
-  "aboutIntro": "Duet — a personal interface to Claude Code via the Agent SDK and your subscription.",
+  "aboutIntro": "Duet — a desktop interface to Claude Code, Codex and Antigravity through your subscriptions.",
   "updateApp": "Update app",
   "updateAppHint": "Rebuild the UI from the project folder and restart the window. Open sessions continue after the restart.",
   "relaunch": "Restart",

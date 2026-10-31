@@ -1,8 +1,0 @@
-{
-  "emptyMessage": "Commit message is empty",
-  "noFiles": "No files selected",
-  "badBranch": "Invalid branch name",
-  "notActiveWorktree": "This is not an active Duet worktree",
-  "notWorktree": "This is not a Duet worktree",
-  "folderBusy": "Folder is in use by another process: {path}"
-}

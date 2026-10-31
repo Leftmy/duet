@@ -1,8 +1,0 @@
-{
-  "emptyMessage": "Пустое сообщение коммита",
-  "noFiles": "Не выбраны файлы",
-  "badBranch": "Недопустимое имя ветки",
-  "notActiveWorktree": "Это не активный worktree Duet",
-  "notWorktree": "Это не worktree Duet",
-  "folderBusy": "Папка занята другим процессом: {path}"
-}

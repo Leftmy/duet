@@ -1,963 +1,610 @@
 {
-  "version": 1,
+  "version": 2,
   "target": "rust",
   "channels": [
     {
       "channel": "agent:autoTitle",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:backgroundTask",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:closeThread",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:configure",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:contextUsage",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:deleteSession",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:fork",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:interrupt",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:listSessions",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/history.rs"
     },
     {
       "channel": "agent:loadSession",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/history.rs"
     },
     {
       "channel": "agent:loadSessionPage",
       "owner": "rust",
-      "legacySources": [],
       "rustModule": "core/history.rs"
     },
     {
       "channel": "agent:loadSubagentPage",
       "owner": "rust",
-      "legacySources": [],
       "rustModule": "core/history.rs"
     },
     {
       "channel": "agent:loadSubagents",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/history.rs"
     },
     {
       "channel": "agent:probe",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:renameSession",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:respondPermission",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:rewind",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:rewindConversation",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:segments",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/history.rs"
     },
     {
       "channel": "agent:send",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:stopTask",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:taskOutput",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "agent:usage",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "app:buildInfo",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:commitMessage",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "app:getSettings",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/storage.rs"
     },
     {
       "channel": "app:gitBranch",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitBranches",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitCheckout",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitCommit",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitDiscard",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitFileDiff",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitPull",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitPush",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:gitStatus",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "app:openExternal",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:openIn",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:openPath",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:openTargets",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:pathExists",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/mod.rs"
     },
     {
       "channel": "app:pickFolder",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:rebuild",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:relaunch",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:setSettings",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/storage.rs"
     },
     {
       "channel": "app:setTheme",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "app:showInFolder",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "browser:control",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
-      "rustModule": "core/desktop.rs"
+      "rustModule": "core/browser.rs"
     },
     {
       "channel": "browser:navigate",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
-      "rustModule": "core/desktop.rs"
+      "rustModule": "core/browser.rs"
     },
     {
       "channel": "browser:screenshot",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
-      "rustModule": "core/desktop.rs"
+      "rustModule": "core/browser.rs"
     },
     {
       "channel": "browser:setBounds",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
-      "rustModule": "core/desktop.rs"
+      "rustModule": "core/browser.rs"
     },
     {
       "channel": "browser:setVisible",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
-      "rustModule": "core/desktop.rs"
+      "rustModule": "core/browser.rs"
     },
     {
       "channel": "browser:state",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
-      "rustModule": "core/desktop.rs"
+      "rustModule": "core/browser.rs"
     },
     {
       "channel": "cmd:delete",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/commands.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "cmd:list",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/commands.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "cmd:paths",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/commands.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "cmd:read",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/commands.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "cmd:rename",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/commands.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "cmd:write",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/commands.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "desk:codex",
       "owner": "rust",
-      "legacySources": [],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "desk:history-context",
       "owner": "rust",
-      "legacySources": [],
       "rustModule": "core/history.rs"
     },
     {
       "channel": "desk:native-core",
       "owner": "rust",
-      "legacySources": [],
       "rustModule": "core/mod.rs"
     },
     {
       "channel": "desk:notification",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "desk:release",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "desk:skills",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "desk:summarize",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "desk:switch-provider",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "desk:ui-error",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "desk:watch",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "files:list",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/files.rs"
     },
     {
       "channel": "files:read",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/files.rs"
     },
     {
       "channel": "files:unwatch",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/files.rs"
     },
     {
       "channel": "files:watch",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/files.rs"
     },
     {
       "channel": "files:write",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/files.rs"
     },
     {
       "channel": "fs:attachment",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/fsindex.mjs"
-      ],
       "rustModule": "core/files.rs"
     },
     {
       "channel": "fs:index",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/fsindex.mjs"
-      ],
       "rustModule": "core/project_index.rs"
     },
     {
       "channel": "fs:stat",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/fsindex.mjs"
-      ],
       "rustModule": "core/files.rs"
     },
     {
       "channel": "instr:hooksSummary",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/instructions.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "instr:list",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/instructions.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "instr:read",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/instructions.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "instr:write",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/instructions.mjs"
-      ],
       "rustModule": "core/config.rs"
     },
     {
       "channel": "mcp:add",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "mcp:reconnect",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "mcp:remove",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "mcp:status",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/agents.rs"
     },
     {
       "channel": "pr:branches",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/pr.mjs"
-      ],
       "rustModule": "core/pr.rs"
     },
     {
       "channel": "pr:create",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/pr.mjs"
-      ],
       "rustModule": "core/pr.rs"
     },
     {
       "channel": "pr:draft",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/pr.mjs"
-      ],
       "rustModule": "core/pr.rs"
     },
     {
       "channel": "pr:failedLogs",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/pr.mjs"
-      ],
       "rustModule": "core/pr.rs"
     },
     {
       "channel": "pr:push",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/pr.mjs"
-      ],
       "rustModule": "core/pr.rs"
     },
     {
       "channel": "pr:status",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/pr.mjs"
-      ],
       "rustModule": "core/pr.rs"
     },
     {
       "channel": "sched:delete",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/scheduler.mjs"
-      ],
       "rustModule": "core/scheduler.rs"
     },
     {
       "channel": "sched:list",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/scheduler.mjs"
-      ],
       "rustModule": "core/scheduler.rs"
     },
     {
       "channel": "sched:runNow",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/scheduler.mjs"
-      ],
       "rustModule": "core/scheduler.rs"
     },
     {
       "channel": "sched:save",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/scheduler.mjs"
-      ],
       "rustModule": "core/scheduler.rs"
     },
     {
       "channel": "sched:setTelegram",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/scheduler.mjs"
-      ],
       "rustModule": "core/scheduler.rs"
     },
     {
       "channel": "sched:telegramTest",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/scheduler.mjs"
-      ],
       "rustModule": "core/scheduler.rs"
     },
     {
       "channel": "sched:toggle",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/scheduler.mjs"
-      ],
       "rustModule": "core/scheduler.rs"
     },
     {
       "channel": "search:query",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/search.mjs"
-      ],
       "rustModule": "core/search.rs"
     },
     {
       "channel": "search:reindex",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/search.mjs"
-      ],
       "rustModule": "core/search.rs"
     },
     {
       "channel": "stats:summary",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/stats.rs"
     },
     {
       "channel": "term:create",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/terminal.rs"
     },
     {
       "channel": "term:kill",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/terminal.rs"
     },
     {
       "channel": "term:resize",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/terminal.rs"
     },
     {
       "channel": "term:write",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/terminal.rs"
     },
     {
       "channel": "tg:setEnabled",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/telegram.mjs"
-      ],
       "rustModule": "core/telegram.rs"
     },
     {
       "channel": "tg:status",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/telegram.mjs"
-      ],
       "rustModule": "core/telegram.rs"
     },
     {
       "channel": "voice:ping",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/voice.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:close",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:detach",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:focus",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:handoff",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:info",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:list",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:ready",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:reattach",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "win:setTheme",
       "owner": "rust",
-      "legacySources": [
-        "electron/features/windows.mjs"
-      ],
       "rustModule": "core/desktop.rs"
     },
     {
       "channel": "wt:all",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "wt:apply",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "wt:create",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "wt:isRepo",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     },
     {
       "channel": "wt:remove",
       "owner": "rust",
-      "legacySources": [
-        "electron/main.mjs"
-      ],
       "rustModule": "core/git.rs"
     }
   ]
