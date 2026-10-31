@@ -519,7 +519,19 @@ impl History {
     ) -> CoreResult {
         self.with_db(|db| {
             let source = self.ensure(db, provider, id, cwd, segment, None, None)?;
-            self.read_page(db, &source, page)
+            let mut result=self.read_page(db, &source, page)?;
+            let events=if result.is_array(){result.as_array_mut()}else{result.get_mut("events").and_then(Value::as_array_mut)};
+            if let Some(events)=events{for event in events{if event["type"]=="user"{event["text"]=json!(super::context::visible_message(s(event,"text")));}}}
+            Ok(result)
+        })
+    }
+    pub fn visit_context(&self,id:&str,cwd:Option<&str>,segment:Option<i64>,provider:&str,mut visit:impl FnMut(Value)->Result<(),String>)->Result<(),String>{
+        self.with_db(|db|{
+            let source=self.ensure(db,provider,id,cwd,segment,None,None)?;
+            let mut stmt=db.prepare("SELECT event FROM history_events WHERE source=?1 ORDER BY seq").map_err(error)?;
+            let rows=stmt.query_map([source],|r|r.get::<_,String>(0)).map_err(error)?;
+            for row in rows{let mut event:Value=serde_json::from_str(&row.map_err(error)?).map_err(error)?;if event["type"]=="user"{event["text"]=json!(super::context::visible_message(s(&event,"text")));}visit(event)?;}
+            Ok(())
         })
     }
     pub fn subagent_page(

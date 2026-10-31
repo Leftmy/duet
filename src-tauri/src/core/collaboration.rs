@@ -157,6 +157,7 @@ fn cancelled(run: &Arc<Run>, token: &AtomicBool) -> bool {
     !Agents::current(run) || token.load(Ordering::Acquire)
 }
 fn state(t: &Thread) -> &'static str {
+    if t.context_waiting.load(Ordering::Acquire){return "running"}
     if t.run
         .lock()
         .unwrap()
@@ -189,7 +190,7 @@ impl Agents {
         }
         root
     }
-    fn family(&self, t: &Arc<Thread>) -> Vec<Arc<Thread>> {
+    pub(super) fn family(&self, t: &Arc<Thread>) -> Vec<Arc<Thread>> {
         let root = self.family_root(t);
         let mut out = vec![root.clone()];
         let mut at = 0;
@@ -284,7 +285,7 @@ impl Agents {
         let cursor = self.team_record(t, recorded);
         let root = self.family_root(t);
         if let Some(sub) = &t.sub {
-            if own_end {
+            if own_end && event["contextCheckpoint"]!=true {
                 if let Some(parent) = self.find(&sub.parent) {
                     self.team_background(&parent, sub, false);
                 }
@@ -334,7 +335,7 @@ impl Agents {
                     json!({"threadId":root.id,"ev":{"type":"tool.sub","id":sub.tool,"name":event["name"],"input":event["input"]}}),
                 );
             }
-            if own_end && event["stopped"] != true {
+            if own_end && event["stopped"] != true && event["contextCheckpoint"]!=true {
                 self.notify_completion(t, cursor);
             }
         } else if !t.hidden {
@@ -406,7 +407,7 @@ impl Agents {
             }
         }
     }
-    fn enqueue_message(&self, target: &Arc<Thread>, message: Value) -> Result<(), String> {
+    pub(super) fn enqueue_message(&self, target: &Arc<Thread>, message: Value) -> Result<(), String> {
         if self.closing.load(Ordering::Acquire) {
             return Err("Application is closing".into());
         }
@@ -535,6 +536,7 @@ impl Agents {
         }).is_err(){t.delivering.store(false,Ordering::Release);}
     }
     pub(super) fn stop_tree(&self, t: &Arc<Thread>) {
+        self.context_cancel(t);
         t.mailbox_paused.store(true, Ordering::Release);
         for child in self.children(&t.id) {
             self.stop_tree(&child);
@@ -721,6 +723,9 @@ impl Agents {
                     resume_at: Mutex::new(None),
                     run: Mutex::new(None),
                     lifecycle: Mutex::new(()),
+                    context_scope: Mutex::new(String::new()),
+                    context_gate: Mutex::new(()),
+                    context_waiting: AtomicBool::new(false),
                     sub: Some(Sub {
                         parent: t.id.clone(),
                         tool: display.clone(),

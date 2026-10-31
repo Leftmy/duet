@@ -349,7 +349,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
     });
     return changed?{...t0,entries}:t0;
   }
-  if (ev.type === 'session') return ev.sessionId === t0.sessionId ? t0 : { ...t0, sessionId: ev.sessionId };
+  if (ev.type === 'session') return ev.sessionId === t0.sessionId ? t0 : { ...t0, sessionId: ev.sessionId, ...(ev.contextReplacement?{context:undefined}:{}) };
   if (ev.type === 'context') return { ...t0, context: ev.usage };
   if(ev.type==='codex.state')return {...t0,codex:{...t0.codex,...ev.state},...(ev.state.title?{title:ev.state.title}:{})};
   if (ev.type === 'status') return {
@@ -439,8 +439,8 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
         if (ev.isError && !t.stopRequested) turn.error = (ev.error || tr('common.error')).slice(0, 600);
         turn.items = turn.items.map((x) => (x.kind === 'tool' && x.status === 'running' ? { ...x, status: 'error' as const, endedAt: now } : x));
       }
-      t.status = 'idle';
-      t.activity = undefined;
+      t.status = ev.contextCheckpoint ? 'running' : 'idle';
+      t.activity = ev.contextCheckpoint ? tr('reduce.compacting') : undefined;
       t.stopRequested = false;
       break;
     }

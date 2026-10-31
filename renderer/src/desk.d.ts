@@ -18,6 +18,7 @@ interface SendPayload {
   chrome?: boolean;
   /** Extra folders Claude may read and edit (project folders besides cwd). */
   dirs?: string[];
+  contextHistory?: { provider: string; sessionId: string; cwd?: string }[];
   priority?: 'now' | 'next' | 'later';
   /** Extra system instructions for a run that starts with this message (context handed over from another agent). */
   instructions?: string;
@@ -43,6 +44,7 @@ declare global {
     desk: {
       platform: string;
       nativeHistoryPaging?: boolean;
+      nativeContext?: boolean;
       getPathForFile?(file: File): string;
       /** Feature modules: invoke a namespaced channel (pr:, search:, sched:, voice:, instr:). */
       call<T = any>(channel: string, ...args: any[]): Promise<T>;

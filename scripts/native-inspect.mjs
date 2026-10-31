@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { testCodexUI } from './native-codex-ui.mjs';
 import { testPasteUI } from './native-paste-ui.mjs';
+import { testContextUI } from './native-context-ui.mjs';
 import { testTeamUI } from './native-team-ui.mjs';
 import { testSteeringUI } from './native-steering-ui.mjs';
 import { testBrowserUI } from './native-browser-ui.mjs';
@@ -40,7 +41,8 @@ const debugListener=createServer();
 await new Promise(r=>debugListener.listen(0,'127.0.0.1',r));
 const debugPort=debugListener.address().port;
 await new Promise(r=>debugListener.close(r));
-const child=spawn(process.env.DUET_NATIVE_TEST_BIN||path.join(root,built?'src-tauri/target/release/duet-native.exe':packaged?'release/native/duet-native.exe':'src-tauri/target/debug/duet-native.exe'),[],{windowsHide:true,env:{...testEnv,
+const testBinary=process.env.DUET_NATIVE_TEST_BIN||path.join(root,built?'src-tauri/target/release/duet-native.exe':packaged?'release/native/duet-native.exe':'src-tauri/target/debug/duet-native.exe');
+const child=spawn(testBinary,[],{windowsHide:true,env:{...testEnv,
   ...(!packaged?{DUET_NATIVE_PROJECT_ROOT:root,DUET_NODE_BIN:process.execPath}:{}),DUET_NATIVE_USER_DATA:profile,DUET_NATIVE_TEST:'1',DUET_NATIVE_PREVIEW:'1',DUET_NATIVE_TEST_TRANSCRIPTS:testTranscripts,
   DUET_NATIVE_INSPECT_PORT:String(debugPort)},stdio:['ignore','pipe','pipe']});
 console.log(JSON.stringify({pid:child.pid,profile}));
@@ -171,6 +173,7 @@ try{
   await testBrowserUI(evaluate,browserURL,profile,async()=>{const shot=await rpc('Page.captureScreenshot',{format:'png'});if(shot.result?.data){fs.writeFileSync(path.join(profile,'browser-tabs-sleep.png'),Buffer.from(shot.result.data,'base64'));console.log('Browser tab screenshot:',path.join(profile,'browser-tabs-sleep.png'));}});
   await testCodexUI(evaluate,profile);
   await testPasteUI(evaluate,profile);
+  if(cliFixtures)await testContextUI(evaluate,profile,cliFixtures.root,testBinary);
   await testTeamUI(evaluate);
   await testSteeringUI(evaluate);
   await testRecoveryUI(evaluate);

@@ -33,6 +33,7 @@ What sets it apart from a single-agent client:
   Agents can message parents and teammates, queue follow-ups while busy and inspect
   every descendant's events through a replayable journal. See the
   [multi-agent MCP audit](docs/MULTI_AGENT_MCP.md) for contracts, limits and verification.
+- **🗂 Editable model context.** Archive selected blocks, compress them with a chosen subscription model, pin important results and undo edits. Originals remain readable. Agents use the same scoped tools; changes apply at a safe turn boundary in the same chat. See [context management](docs/CONTEXT_MANAGEMENT.md).
 - **📊 Every account at a glance.** Plan, session and weekly limits for each agent, refreshed on their own.
 
 ## Supported agents
@@ -67,7 +68,7 @@ in `diagnostics.log` under the app's user-data directory. A React recovery view 
 running chats and event subscriptions without restarting the core.
 
 The application runs a Rust core inside Tauri 2: WebView2 on Windows and WebKitGTK on Linux.
-All 121 application commands are handled in Rust, including providers, history, search, Git,
+All 123 application commands are handled in Rust, including providers, history, search, Git,
 terminals, schedules and Telegram. There is no persistent Node sidecar or JavaScript SDK adapter.
 The previous Electron implementation, Node bridge and JavaScript provider SDK have been removed.
 Idle agent sessions release their client processes after

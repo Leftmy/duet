@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 const provider=process.argv[1].match(/fake-([^.]+)/)[1];const args=process.argv.slice(2);const write=v=>process.stdout.write(JSON.stringify(v)+'\n');
 if(args.includes('--version')){console.log(provider+' 0.200.0');process.exit()}
 if(args.includes('--help')){console.log('--input-format --output-format --disable-slash-commands --resume');process.exit()}
-if(args[0]==='models'){console.log('fake-model\tFake model');process.exit()}
+if(args[0]==='models'){console.log('fake-model\tFake model\nfake-small\tFake compressor');process.exit()}
 if(args.includes('/usage')){console.log(JSON.stringify({status:'SUCCESS',command:{data:{groups:[{name:'Gemini',buckets:[{window:'5h',remaining_fraction:.75,reset_time:'2030-01-01T00:00:00Z'},{window:'weekly',remaining_fraction:.5}]}]}}}));process.exit()}
 const blocked=provider==='claude'?['ANTHROPIC_API_KEY']:provider==='codex'?['OPENAI_API_KEY','CODEX_API_KEY']:['GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_APPLICATION_CREDENTIALS'];
 if(blocked.some(k=>process.env[k])){console.error('API credentials leaked into subscription CLI');process.exit(8)}
@@ -14,6 +14,31 @@ let sid=args.find(a=>a.startsWith('--resume='))?.slice(9)||(resumeFlag?args[args
 const answer=(id,result)=>write({id,result});const control=(id,response)=>write({type:'control_response',response:{subtype:'success',request_id:id,response}});
 const activeTurns=new Map(),teamCalls=new Map(),teamTimers=new Map();let teamSeq=2000;
 const steering=new Map();
+function promptText(raw,tid){
+ fs.appendFileSync(fileURLToPath(new URL('./context-inputs.jsonl',import.meta.url)),JSON.stringify({provider,tid,text:raw,args})+'\n');
+ let text=raw.replace(/^<duet_context_commands>[\s\S]*?<\/duet_context_commands>\s*/,'');
+ const match=/^<duet_context_packet bytes="(\d+)">\n/.exec(text);
+ if(match){const bytes=Buffer.from(text.slice(match[0].length));text=bytes.subarray(Number(match[1])).toString().replace(/^\n<\/duet_context_packet>\n\n/,'');}
+ return text;
+}
+function agyEnd(text){write({event:'step_update',step_update:{step_index:1,step_type:'agent_response',text_delta:text,state:'DONE'}});write({event:'result',result:{status:'SUCCESS',response:text}});}
+function contextInput(tid,text){
+ const end=output=>provider==='claude'?claudeEnd(output):provider==='codex'?codexEnd(tid,output):agyEnd(output);
+ if(text.includes('Create a compact factual record')){if(text.includes('CTX_COMPRESSION_FAIL')){if(provider==='claude')write({type:'result',is_error:true,result:'Synthetic compression failure'});else end('');return true;}const id=/"id":"([^"]+)"/.exec(text)?.[1]||'source';const done=()=>end('Facts: KEEP_FACT Rust core is confirmed. Checks: tests passed. Unfinished: continue the task. Source: '+id);if(text.includes('CTX_DELAY'))setTimeout(done,15000);else done();return true;}
+ if(text.startsWith('CTX_SEED_LOG')){
+  const result='CONTEXT_OBSOLETE_CANARY '+text.slice('CTX_SEED_LOG'.length)+' '+('old diagnostic line\n'.repeat(600));
+  if(provider==='claude'){write({type:'assistant',uuid:randomUUID(),message:{content:[{type:'text',text:'Inspecting diagnostics.'},{type:'tool_use',id:'context-log-'+turn,name:'Bash',input:{command:'synthetic-test'}}]}});write({type:'user',message:{content:[{type:'tool_result',tool_use_id:'context-log-'+turn,content:result}]}});write({type:'stream_event',event:{type:'message_start',message:{id:'context-answer-'+turn}}});write({type:'stream_event',event:{type:'content_block_start',index:0,content_block:{type:'text',text:''}}});}
+  else if(provider==='codex')write({method:'item/completed',params:{threadId:tid,item:{type:'commandExecution',id:'context-log-'+turn,command:'synthetic-test',aggregatedOutput:result,exitCode:0,status:'completed'}}});
+  else{write({event:'step_update',step_update:{step_index:2,step_type:'tool',tool_info:{name:'run_command',parameters:{command:'synthetic-test'},output:result},state:'DONE'}});}
+  end('KEEP_FACT native Rust is confirmed.');return true;
+ }
+ if(!text.startsWith('CONTEXT '))return false;
+ const call=JSON.parse(text.slice(8)),id=++teamSeq;
+ if(provider==='claude'){teamCalls.set(String(id),{label:'CONTEXT_RESULT'});write({type:'control_request',request_id:id,request:{subtype:'mcp_message',server_name:'desk-context',message:{jsonrpc:'2.0',id,method:'tools/call',params:{name:call.name,arguments:call.args||{}}}}});}
+ else if(provider==='codex'){teamCalls.set(String(id),{tid,label:'CONTEXT_RESULT'});write({id,method:'item/tool/call',params:{threadId:tid,callId:'ctx-'+id,tool:call.name,namespace:'desk-context',arguments:call.args||{}}});}
+ else{const trace=fs.readFileSync(fileURLToPath(new URL('./context-inputs.jsonl',import.meta.url)),'utf8').trim().split('\n').map(JSON.parse).at(-1);const endpoint=/--context-client '(http[^']+)'/.exec(trace.text)?.[1];void fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:call.name,...call.args})}).then(r=>r.json()).then(result=>end('CONTEXT_RESULT '+JSON.stringify(result.result??{tool_error:result.error})));}
+ return true;
+}
 function steeringHold(tid,text){
  if(!text.startsWith('STEER_HOLD'))return false;
  const notes=[],entry={notes,mode:text,turnId:activeTurns.get(tid)};steering.set(tid,entry);
@@ -46,8 +71,9 @@ function codexEnd(tid,text){const id=activeTurns.get(tid)||'turn-'+turn;write({m
 if(provider==='gemini'){let content='';for await(const chunk of process.stdin)content+=chunk;write({type:'init',session_id:sid});write({type:'message',role:'assistant',content:'Gemini: '+content.trim(),delta:true});write({type:'result',status:'success'});process.exit()}
 for await(const line of createInterface({input:process.stdin})){let m;try{m=JSON.parse(line)}catch{continue}
  if(provider==='claude'){
-  if(m.type==='control_request'){const q=m.request;control(m.request_id,q.subtype==='initialize'?{claude_code_version:'fake',models:[{value:'fake-model',displayName:'Fake model'}],account:{subscriptionType:'max',apiKeySource:'none'},commands:[]}:q.subtype==='get_usage'?{subscription_type:'max',rate_limits_available:true,rate_limits:{five_hour:{utilization:25}}}:q.subtype==='get_context_usage'?{totalTokens:10,maxTokens:100,percentage:10,categories:[]}:{});}
-  else if(m.type==='user'){turn++;const content=m.message.content;const text=typeof content==='string'?content:content.filter(c=>c.type==='text').map(c=>c.text).join('\n');write({type:'system',subtype:'init',session_id:sid,model:'fake-model'});write({type:'stream_event',event:{type:'message_start',message:{id:'message-'+turn}}});write({type:'stream_event',event:{type:'content_block_start',index:0,content_block:{type:'text',text:''}}});
+  if(m.type==='control_request'){const q=m.request;control(m.request_id,q.subtype==='initialize'?{claude_code_version:'fake',models:[{value:'fake-model',displayName:'Fake model'},{value:'fake-small',displayName:'Fake compressor'}],account:{subscriptionType:'max',apiKeySource:'none'},commands:[]}:q.subtype==='get_usage'?{subscription_type:'max',rate_limits_available:true,rate_limits:{five_hour:{utilization:25}}}:q.subtype==='get_context_usage'?{totalTokens:10,maxTokens:100,percentage:10,categories:[]}:{});}
+  else if(m.type==='user'){turn++;const content=m.message.content;const text=promptText(typeof content==='string'?content:content.filter(c=>c.type==='text').map(c=>c.text).join('\n'),sid);write({type:'system',subtype:'init',session_id:sid,model:'fake-model'});write({type:'stream_event',event:{type:'message_start',message:{id:'message-'+turn}}});write({type:'stream_event',event:{type:'content_block_start',index:0,content_block:{type:'text',text:''}}});
+   if(contextInput(sid,text))continue;
    if(steering.has(sid)){steering.get(sid).notes.push(text);continue;}
    if(steeringHold(sid,text)){}
    else if(teamInput(sid,text)){}
@@ -68,7 +94,7 @@ for await(const line of createInterface({input:process.stdin})){let m;try{m=JSON
   if(m.method==='turn/interrupt'||m.method==='thread/unsubscribe'){fs.appendFileSync(fileURLToPath(new URL('./codex-control-trace.jsonl',import.meta.url)),JSON.stringify({method:m.method,params:m.params})+'\n');if(m.method==='turn/interrupt')clearTimeout(teamTimers.get(m.params.threadId));answer(m.id,{});continue;}
   if(m.method==='initialize')answer(m.id,{userAgent:'codex/0.200.0'});
   else if(m.method==='account/read')answer(m.id,{account:{type:'chatgpt',email:'fixture@example.invalid',planType:'pro'}});
-  else if(m.method==='model/list')answer(m.id,{data:[{id:'fake-model',displayName:'Fake model',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'ultra'}],serviceTiers:[{id:'default',name:'Standard'},{id:'fast',name:'Fast'}]}]});
+  else if(m.method==='model/list')answer(m.id,{data:[{id:'fake-model',displayName:'Fake model',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'ultra'}],serviceTiers:[{id:'default',name:'Standard'},{id:'fast',name:'Fast'}]},{id:'fake-small',displayName:'Fake compressor',supportedReasoningEfforts:[]}]});
   else if(m.method==='config/read')answer(m.id,{config:{model:'fake-model'}});
   else if(m.method==='account/rateLimits/read')answer(m.id,{rateLimits:{planType:'pro',primary:{usedPercent:25,windowDurationMins:300}}});
   else if(m.method==='skills/list')answer(m.id,{data:[{cwd:m.params.cwds?.[0],skills:[{name:'native-skill',description:'Fixture skill',path:fileURLToPath(new URL('./native-skill/SKILL.md',import.meta.url)),scope:'user',enabled:true}]}]});
@@ -91,11 +117,11 @@ for await(const line of createInterface({input:process.stdin})){let m;try{m=JSON
     else{if(!m.params.input.some(i=>i.type==='skill'&&i.name==='native-skill'))throw Error('Missing native skill input');pending=null;codexEnd(tid,'Native skill selected');}
   }
   else if(m.method==='thread/start'||m.method==='thread/resume'||m.method==='thread/fork'){sid=m.params.threadId||randomUUID();answer(m.id,{thread:{id:sid},model:'fake-model'});}
-  else if(m.method==='turn/start'){turn++;const tid=m.params.threadId;activeTurns.set(tid,'turn-'+turn);const text=m.params.input.filter(i=>i.type==='text').map(i=>i.text).join('\n');const currentTurn='turn-'+turn;const begin=()=>{answer(m.id,{turn:{id:currentTurn,status:'inProgress'}});const started=()=>write({method:'turn/started',params:{threadId:tid,turn:{id:currentTurn}}});if(text.includes('DELAY'))setTimeout(started,100);else started();if(steeringHold(tid,text)){}else if(teamInput(tid,text)){}else if(text==='approve'){pending={tid};write({id:900,method:'item/commandExecution/requestApproval',params:{threadId:tid,itemId:'cmd-1',command:'fixture-only'}})}else if(text==='approve-patch'){pending={tid};write({method:'item/started',params:{threadId:tid,item:{type:'fileChange',id:'patch-1',changes:[{path:'fixture.rs',kind:{type:'update'},diff:'-old\n+new'}]}}});write({id:900,method:'item/fileChange/requestApproval',params:{threadId:tid,itemId:'patch-1',reason:'Fixture edit'}})}else setTimeout(()=>codexEnd(tid,'Codex: '+text),20);};if(text==='TEAM_HOLD_LONG'){const release=fileURLToPath(new URL('./codex-start-release-'+tid,import.meta.url));fs.appendFileSync(fileURLToPath(new URL('./codex-control-trace.jsonl',import.meta.url)),JSON.stringify({method:'fixture/start-pending',params:{threadId:tid}})+'\n');const poll=setInterval(()=>{if(fs.existsSync(release)){clearInterval(poll);begin();}},5);poll.unref();}else begin();}
+  else if(m.method==='turn/start'){turn++;const tid=m.params.threadId;activeTurns.set(tid,'turn-'+turn);const text=promptText(m.params.input.filter(i=>i.type==='text').map(i=>i.text).join('\n'),tid);const currentTurn='turn-'+turn;const begin=()=>{answer(m.id,{turn:{id:currentTurn,status:'inProgress'}});const started=()=>write({method:'turn/started',params:{threadId:tid,turn:{id:currentTurn}}});if(text.includes('DELAY'))setTimeout(started,100);else started();if(contextInput(tid,text)){}else if(steeringHold(tid,text)){}else if(teamInput(tid,text)){}else if(text==='approve'){pending={tid};write({id:900,method:'item/commandExecution/requestApproval',params:{threadId:tid,itemId:'cmd-1',command:'fixture-only'}})}else if(text==='approve-patch'){pending={tid};write({method:'item/started',params:{threadId:tid,item:{type:'fileChange',id:'patch-1',changes:[{path:'fixture.rs',kind:{type:'update'},diff:'-old\n+new'}]}}});write({id:900,method:'item/fileChange/requestApproval',params:{threadId:tid,itemId:'patch-1',reason:'Fixture edit'}})}else setTimeout(()=>codexEnd(tid,'Codex: '+text),20);};if(text==='TEAM_HOLD_LONG'){const release=fileURLToPath(new URL('./codex-start-release-'+tid,import.meta.url));fs.appendFileSync(fileURLToPath(new URL('./codex-control-trace.jsonl',import.meta.url)),JSON.stringify({method:'fixture/start-pending',params:{threadId:tid}})+'\n');const poll=setInterval(()=>{if(fs.existsSync(release)){clearInterval(poll);begin();}},5);poll.unref();}else begin();}
   else if(teamCalls.has(String(m.id))){const call=teamCalls.get(String(m.id));teamCalls.delete(String(m.id));codexEnd(call.tid,call.label+' '+(m.result?.contentItems?.[0]?.text||JSON.stringify(m)));}
   else if(m.id===900&&pending){codexEnd(pending.tid,pending.structured?JSON.stringify(m.result):'Permission: '+m.result.decision);pending=null}
   else if(m.method&&m.id)answer(m.id,{});
- }else if(provider==='antigravity'&&m.event==='user'){const text=m.message.content;write({event:'init',conversation_id:sid});write({event:'step_update',step_update:{step_index:1,step_type:'agent_response',text_delta:'Antigravity: '+text,state:'DONE'}});write({event:'result',result:{status:'SUCCESS',response:'Antigravity: '+text}});}
+ }else if(provider==='antigravity'&&m.event==='user'){turn++;const text=promptText(m.message.content,sid);write({event:'init',conversation_id:sid});if(contextInput(sid,text))continue;agyEnd('Antigravity: '+text);}
 }
 `;
 export function createNativeFixtures(){

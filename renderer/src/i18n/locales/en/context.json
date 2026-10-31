@@ -1,0 +1,11 @@
+{
+  "cancel": "Cancel context operation",
+  "manage": "Manage context",
+  "hint": "Originals stay on disk. Changes take effect before the next message. Direct user instructions and active turns are protected.",
+  "size": "Active text: {active} · archived + active: {total}. Provider token usage is shown separately.",
+  "filter": "Block state", "active": "Active", "archived": "Archived", "all": "All", "refresh": "Refresh",
+  "selected_one": "{count} selected", "selected_other": "{count} selected", "inProgress": "in progress", "empty": "No blocks in this view", "more": "Load more",
+  "provider": "Compressor provider", "model": "Compressor model", "target": "Target tokens (estimate)", "preserve": "Details to preserve, one per line",
+  "restore": "Restore", "archive": "Archive", "pin": "Pin / unpin", "preview": "Validate", "compress": "Compress", "validated": "Selection and revision are valid. No changes applied.", "undo": "Undo",
+  "job.queued": "Queued", "job.preparing": "Compressing", "job.ready": "Ready — applies before the next message", "job.staged": "Waiting for provider acknowledgement", "job.applied": "Applied", "job.failed": "Failed — original context retained"
+}

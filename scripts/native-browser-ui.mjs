@@ -35,6 +35,7 @@ export async function testBrowserUI(evaluate, browserURL, profile, captureSleep)
   assert.equal((await state()).tabs.find(t=>t.id===first).url,browserURL);
   await call('close-tab');
   await call('select-tab',{tabId:first});
+  await wait(()=>evaluate(`document.querySelector('.browser-tabs [aria-selected="true"]')?.textContent.includes('Duet native browser test')`),'selected tab rendered before acting on its controls');
   await pageEval(browserURL,`const input=document.querySelector('#draft');input.value='UNSAVED';input.dispatchEvent(new Event('input',{bubbles:true}));true`);
   const protectedResult=await evaluate(`window.desk.browserControl({action:'sleep-tab',tabId:${JSON.stringify(first)}},${JSON.stringify(key)}).then(()=> 'UNEXPECTED',e=>String(e))`);
   assert.match(protectedResult,/Protected tab: input/);

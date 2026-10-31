@@ -29,6 +29,7 @@
   },
   platform: __DUET_PLATFORM__,
   nativeHistoryPaging: true,
+  nativeContext: true,
   loadSessionPage: invoke('agent:loadSessionPage'),
   loadSubagentPage: invoke('agent:loadSubagentPage'),
   // Native file-drop paths are attached by the host.

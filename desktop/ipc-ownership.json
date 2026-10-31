@@ -298,6 +298,11 @@
       "rustModule": "core/agents.rs"
     },
     {
+      "channel": "desk:context",
+      "owner": "rust",
+      "rustModule": "core/context.rs"
+    },
+    {
       "channel": "desk:history-context",
       "owner": "rust",
       "rustModule": "core/history.rs"

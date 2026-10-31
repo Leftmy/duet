@@ -3,6 +3,7 @@ mod agents;
 mod cli;
 mod codex;
 mod config;
+mod context;
 mod desktop;
 mod events;
 mod files;
@@ -36,6 +37,18 @@ use std::{
 pub type Emit = Arc<dyn Fn(&str, Value) + Send + Sync>;
 pub use agents::Host;
 pub type CoreResult = Result<Value, String>;
+/// Native CLI fallback for providers without an in-process dynamic-tool bridge.
+pub fn context_client(args:&[String])->Result<Value,String>{
+    let endpoint=args.first().ok_or("Expected context endpoint")?;
+    let url=url::Url::parse(endpoint).map_err(|e|e.to_string())?;
+    if url.scheme()!="http"||url.host_str()!=Some("127.0.0.1")||url.port().is_none()||!url.path().starts_with("/context/")||!url.username().is_empty()||url.password().is_some(){return Err("Context endpoints must use a local run capability".into())}
+    let action=args.get(1).ok_or("Expected inspect/read/edit/job/restore")?;
+    if !["inspect","read","edit","job","restore","cancel"].contains(&action.as_str()){return Err("Unknown context action".into())}
+    let input=if args.get(2).map(String::as_str)==Some("--request-file"){let file=args.get(3).ok_or("Expected JSON request file")?;String::from_utf8(storage::read_limited(std::path::Path::new(file),256*1024)?).map_err(|e|e.to_string())?}else{args.get(2).cloned().unwrap_or_else(||"{}".into())};
+    let mut body:Value=serde_json::from_str(&input).map_err(|e|e.to_string())?;if !body.is_object(){return Err("Expected a JSON object".into())}body["action"]=json!(action);
+    let client=reqwest::blocking::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none()).timeout(std::time::Duration::from_secs(60)).build().map_err(|e|e.to_string())?;
+    let response=client.post(url).json(&body).send().map_err(|e|e.to_string())?;response.json::<Value>().map_err(|e|e.to_string())
+}
 pub const CHANNELS: &[&str] = &[
     "agent:autoTitle",
     "agent:backgroundTask",
@@ -101,6 +114,7 @@ pub const CHANNELS: &[&str] = &[
     "desk:release",
     "desk:skills",
     "desk:codex",
+    "desk:context",
     "desk:summarize",
     "desk:switch-provider",
     "desk:ui-error",
@@ -372,6 +386,7 @@ impl NativeCore {
                 .ok_or_else(|| format!("{channel}: expected string argument {n}"))
         };
         match channel {
+            "desk:context" => self.agents.context_api(arg(0)),
             "desk:history-context" => {
                 let parts = events::arr(arg(0));
                 if parts.len() > 500 {

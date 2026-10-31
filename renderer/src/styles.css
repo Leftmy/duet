@@ -1468,6 +1468,20 @@ button {
   margin: 4px 0 8px;
   min-width: 0;
 }
+.context-manager { max-width: calc(100vw - 24px); }
+.context-manager-body { padding: 0 12px 12px; max-height: 65vh; overflow: auto; }
+.context-manager-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.context-manager-bar select { max-width: 230px; min-width: 0; }
+.context-manager-bar input[type=number] { width: 76px; }
+.context-manager-body textarea { width: 100%; resize: vertical; }
+.context-blocks { max-height: 220px; overflow: auto; }
+.context-block { display: flex; gap: 8px; align-items: start; border-bottom: 1px solid var(--border); padding: 7px 0; }
+.context-block-read { min-width: 0; flex: 1; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.context-block-read strong { display: block; font-size: 11px; font-weight: 500; }
+.context-block-read span { display: block; font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.context-preview { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+.context-preview pre { max-height: 160px; overflow: auto; white-space: pre-wrap; font-size: 11px; }
+.context-job { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-top: 1px solid var(--border); padding: 7px 0; font-size: 11px; }
 .pasted-text-file {
   display: flex;
   align-items: center;

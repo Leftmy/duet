@@ -217,6 +217,10 @@ fn window_control(
     Ok(host::window_state(&view))
 }
 fn main() {
+    let context_args:Vec<String>=std::env::args().skip(1).collect();
+    if context_args.first().map(String::as_str)==Some("--context-client") {
+        match duet_native::core::context_client(&context_args[1..]){Ok(value)=>{println!("{value}");std::process::exit(if value["error"].is_string(){1}else{0})},Err(error)=>{println!("{}",json!({"error":error}));std::process::exit(1)}}
+    }
     let backend = Arc::new(Backend::new());
     let managed = backend.clone();
     let mut builder = tauri::Builder::default();

@@ -5,6 +5,7 @@ import type { Thread } from '../types';
 import { useStore } from '../store';
 import { Popover, spring } from './Popover';
 import { t } from '../i18n';
+import { ContextManager } from './ContextManager';
 
 const PALETTE = ['#e07a52', '#4d8ef7', '#c678dd', '#4fbf7f', '#e5b567', '#56b6c2', '#f472b6', '#9ccc65', '#a3a3a3'];
 // Claude Code reports theme colour names; fall back to our palette when they aren't CSS colours.
@@ -14,6 +15,10 @@ const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 
 
 /** Context window fill indicator with a breakdown and a compact button. */
 export function ContextRing({ thread }: { thread: Thread }) {
+  return <><ContextUsageRing thread={thread}/><ContextManager thread={thread}/></>;
+}
+
+function ContextUsageRing({ thread }: { thread: Thread }) {
   const send = useStore((s) => s.send);
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);

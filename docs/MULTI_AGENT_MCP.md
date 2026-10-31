@@ -24,6 +24,11 @@ The active implementation is native Rust: `agents.rs`, `collaboration.rs`,
 
 ## Event delivery
 
+Selective context jobs also publish `context.changed` through the family journal.
+During an automatic context checkpoint the agent remains working; waiters and the
+root do not receive a premature completion. Rebinding its provider session keeps
+Duet MCP descendants alive. See [context management](CONTEXT_MANAGEMENT.md).
+
 `agent_events` returns ordered envelopes with `seq`, `root_id`, `run_id`,
 `parent_id`, `agent_id`, provider, session, timestamp and the normalized event.
 This includes thinking/text deltas, tool input/output/results, plans, patches,

@@ -123,6 +123,24 @@ fn filtered_reads_do_not_skip_unread_events_from_other_agents() {
     agents.shutdown();
 }
 type Events = Arc<Mutex<Vec<(String, Value)>>>;
+#[test]
+fn context_checkpoint_keeps_child_working_and_stop_cancels_pending_context(){
+    let (_dir,agents,root,_run,events)=fixture();
+    let (child,run)=child(&agents,&root,"context-child");
+    child.sub.as_ref().unwrap().notify.store(true,Ordering::Release);
+    let scope=agents.contexts.resolve(&child.id,"codex","").unwrap();*child.context_scope.lock().unwrap()=scope.clone();
+    agents.contexts.record(&scope,"source","old-log","assistant","old log",true,false).unwrap();
+    let job=agents.contexts.begin(&scope,&json!({"expected_revision":0,"continue":true,"operations":[{"action":"archive","ids":["old-log"]}]})).unwrap();
+    agents.emit_event(&run,json!({"type":"turn.end","text":"Context checkpoint; continue after compression","isError":false}));
+    assert_eq!(state(&child),"running");assert!(child.result.lock().unwrap().is_null());
+    assert!(events.lock().unwrap().iter().any(|(_,v)|v["ev"]["id"]=="context-child"&&v["ev"]["status"]=="running"));
+    assert!(!root.inbox.lock().unwrap().iter().any(|m|m["kind"]=="agent.completed"));
+    let (_sibling,_)=super::tests::child(&agents,&root,"unrelated-context-sibling");
+    agents.stop_tree(&child);
+    assert_eq!(agents.contexts.job(&scope,s(&job,"job_id")).unwrap()["status"],"failed");
+    assert_eq!(state(&child),"stopped");assert!(agents.active("unrelated-context-sibling").is_ok());
+    agents.shutdown();
+}
 fn fixture() -> (
     tempfile::TempDir,
     Arc<Agents>,
@@ -162,6 +180,9 @@ fn child(agents: &Arc<Agents>, parent: &Arc<Thread>, id: &str) -> (Arc<Thread>, 
         resume_at: Mutex::new(None),
         run: Mutex::new(None),
         lifecycle: Mutex::new(()),
+        context_scope: Mutex::new(String::new()),
+        context_gate: Mutex::new(()),
+        context_waiting: AtomicBool::new(false),
         sub: Some(Sub {
             parent: parent.id.clone(),
             tool: parent

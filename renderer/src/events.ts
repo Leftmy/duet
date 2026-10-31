@@ -12,7 +12,7 @@ export type DeskEvent = { timestamp?: number; agent?: string } & (
   | {type:'message.receipt';id:string;status:'accepted'|'consumed'|'failed'|'cancelled';error?:string}
   | { type:'codex.state'; state:{goal?:CodexGoal|null;diff?:string;title?:string;settings?:Record<string,any>;questions?:{id:string;items:{title:string;options:string[]|null}[]}|null} }
   /** The provider's session id (first event of a run, and again after a resume). */
-  | { type: 'session'; sessionId: string; model?: string }
+  | { type: 'session'; sessionId: string; model?: string; contextReplacement?: boolean; previousSessionId?: string }
   | { type: 'status'; activity: 'compacting' | 'retrying' | null; attempt?: number; max?: number; permissionMode?: PermMode }
   /** The agent started a model call: the chat is running and messages sent mid-turn have been picked up. */
   | { type: 'step' }
@@ -64,7 +64,7 @@ export type DeskEvent = { timestamp?: number; agent?: string } & (
   | { type: 'agent.mark'; id: string; status: AgentRun['status'] }
   /** The tool call never became an agent (rejected input). */
   | { type: 'agent.drop'; id: string }
-  | { type: 'turn.end'; durationMs?: number; isError?: boolean; error?: string; text?: string; costUsd?: number }
+  | { type: 'turn.end'; durationMs?: number; isError?: boolean; error?: string; text?: string; costUsd?: number; contextCheckpoint?: boolean }
   | { type: 'limits'; provider?: ProviderId; session?: LimitWindow; weekly?: LimitWindow; rejected?: boolean }
   /** Live context-window occupancy, for providers that report it with the stream. */
   | { type: 'context'; usage: ContextUsage });

@@ -374,12 +374,12 @@ export const useStore = create<State>()((set, get) => {
   };
 
   /** A chat got a new session: its first message, or its first one on another agent after a switch. */
-  const onNewSession = (id: string, before: Thread, sessionId: string) => {
+  const onNewSession = (id: string, before: Thread, sessionId: string, replacement?: string) => {
     const t = get().threads[id];
     if (!t) return;
     update(id, (x) => ({ ...x, sessions: { ...(x.sessions ?? {}), [x.provider]: sessionId } }));
     // Continues another agent's session: link the two so the sidebar shows one chat with one title.
-    const prev = Object.entries(before.sessions ?? {}).find(([provider, sid]) => provider !== t.provider && sid !== sessionId)?.[1];
+    const prev = replacement || Object.entries(before.sessions ?? {}).find(([provider, sid]) => provider !== t.provider && sid !== sessionId)?.[1];
     const s = get().settings;
     if (!prev) return;
     persist({
@@ -410,7 +410,11 @@ export const useStore = create<State>()((set, get) => {
     }));
     // The chat just moved to this agent: hand it the conversation it hasn't seen.
     let instructions: string | undefined;
-    if (t.handoff) {
+    const contextHistory=[...Object.entries(t.sessions??{}).map(([provider,sessionId])=>({provider,sessionId,cwd:t.cwd})),...(t.chain??[]).map(part=>({...part,provider:part.provider??'claude',cwd:t.cwd}))];
+    let nativeContext:{managed:boolean}|null=null;
+    try{if(window.desk.nativeContext===true)nativeContext=await window.desk.call('desk:context',{action:'prepare',threadId:id,provider:t.provider,resume:t.sessionId,cwd:t.cwd,contextHistory,handoff:!!t.handoff});}
+    catch(error:any){get().toast(tr('store.sendFailed',{error:String(error?.message??error)}),'error');update(id,x=>({...x,entries:t.entries,status:'idle',draft:text,draftImages:images}));return false;}
+    if (t.handoff && !nativeContext?.managed) {
       update(id, (x) => ({ ...x, activity: tr('store.handingOver') }));
       try {
         const label = (p?: ProviderId) => get().providers[p ?? 'claude']?.label ?? p ?? 'Agent';
@@ -440,6 +444,7 @@ export const useStore = create<State>()((set, get) => {
       }
       update(id, (x) => ({ ...x, handoff: undefined, activity: undefined }));
     }
+    if(t.handoff&&nativeContext?.managed)update(id,x=>({...x,handoff:undefined,activity:undefined}));
     if (t.cwd) {
       const recent = [t.cwd, ...get().settings.recentProjects.filter((p) => p !== t.cwd)].slice(0, 12);
       persist({ recentProjects: recent, cwd: t.cwd });
@@ -475,6 +480,7 @@ export const useStore = create<State>()((set, get) => {
         images,
         uuid,
         chrome: get().settings.chrome,
+        ...(window.desk.nativeContext===true?{contextHistory}:{}),
         serviceTier: t.serviceTier,
         ...(instructions ? { instructions } : {}),
       });
@@ -590,12 +596,12 @@ export const useStore = create<State>()((set, get) => {
         const t = get().threads[threadId];
         if (!t) return;
         set((s) => ({ threads: { ...s.threads, [threadId]: applyEvent(s.threads[threadId], ev) } }));
-        if (ev.type === 'session' && ev.sessionId !== t.sessionId) onNewSession(threadId, t, ev.sessionId);
+        if (ev.type === 'session' && ev.sessionId !== t.sessionId) onNewSession(threadId, t, ev.sessionId, ev.contextReplacement ? ev.previousSessionId : undefined);
         if (ev.type === 'agent' && ev.sessionId && !get().settings.subSessions.includes(ev.sessionId)) {
           persist({ subSessions: [ev.sessionId, ...get().settings.subSessions].slice(0, 1000) });
         }
         if(ev.type==='message.receipt'&&ev.status==='failed'&&!ev.agent)get().toast(tr('store.sendFailed',{error:ev.error??''}),'error');
-        if (ev.type === 'turn.end'&&!ev.agent) onResult(threadId);
+        if (ev.type === 'turn.end'&&!ev.agent&&!ev.contextCheckpoint) onResult(threadId);
         if (ev.type === 'task' && ev.op === 'end'&&!ev.agent) {
           const task = get().threads[threadId]?.tasks[ev.id];
           if (task?.background) {
@@ -1069,8 +1075,6 @@ export const useStore = create<State>()((set, get) => {
           handoff: { from: t.handoff?.from ?? t.provider },
           context: undefined,
           activity: undefined,
-          agents: Object.fromEntries(Object.entries(x.agents).map(([key, a]) => [key, a.status === 'running' ? { ...a, status: 'stopped', endedAt: Date.now() } : a])),
-          tasks: Object.fromEntries(Object.entries(x.tasks).map(([key, task]) => [key, task.status === 'running' || task.status === 'pending' ? { ...task, status: 'stopped', endedAt: Date.now() } : task])),
           // Every session of the chat carries the chat's title.
           retitle: !isDefaultTitle(x.title),
           approvals: [],
@@ -1079,8 +1083,8 @@ export const useStore = create<State>()((set, get) => {
       const aliases = threadSessionIds(get().threads[id]).flatMap((key) => [...linkedSessionIds(key, get().settings.links)]);
       persist({ chatProviders: { ...get().settings.chatProviders, ...Object.fromEntries(aliases.map((key) => [key, provider])) } });
       // Release only the provider run; the chat, browser, draft and history retain their identity.
-      window.desk.call('desk:switch-provider', { threadId: id, provider, resume: sessions[provider] })
-        .catch((e) => get().toast(String(e?.message ?? e), 'error'));
+      window.desk.call('desk:switch-provider', { threadId: id, provider, resume: sessions[provider], previousProvider:t.provider,previousSessionId:t.sessionId,cwd:t.cwd,contextHistory:Object.entries(sessions).map(([provider,sessionId])=>({provider,sessionId,cwd:t.cwd})) })
+        .catch((e) => {if(get().threads[id]?.provider===provider)update(id,()=>t);get().toast(String(e?.message ?? e), 'error');});
     },
 
     setPermissionMode(id, permissionMode) {

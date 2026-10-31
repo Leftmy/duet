@@ -21,7 +21,7 @@ Duet displays server errors instead of silently converting an unsupported operat
 | MCP | List servers and tools, reload, open OAuth login, handle URL and typed form elicitation. Validate required fields, types and constraints in Rust before replying. |
 | Skills | Discover skills, insert explicit `$skill-name` input, pass native skill references, enable or disable individual skills. |
 | Review | Review uncommitted changes, a base branch, a commit or custom instructions. Findings render as Markdown with file links. |
-| Context | Native manual compaction and context usage. Completion tracking distinguishes outer review turns from worker turns and ignores duplicate completion notifications. |
+| Context | Native manual compaction and context usage, plus [selective archive/compression/restore](CONTEXT_MANAGEMENT.md) through native scoped tools. Projection changes rebind the internal session while retaining the application chat and MCP team. Completion tracking distinguishes outer review turns from worker turns and ignores duplicate completion notifications. |
 | Goals | Read, explicitly set, pause, resume or clear a goal; show native token usage and budget. Setting a goal is a user action, not inferred from an ordinary message. |
 | Connections and hooks | Read available app connections, open their installation pages and inspect discovered hooks. Render hook execution progress. |
 | Results | Plans, reasoning, command output, patch progress, MCP progress, web source links, saved generated images and subagent transcripts. |
