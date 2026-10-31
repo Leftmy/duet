@@ -15,6 +15,8 @@ import { TasksBar } from './TasksBar';
 import { ContextRing } from './ContextRing';
 import { t } from '../i18n';
 import {CodexQuestions} from './CodexQuestions';
+import { PastedTextFiles } from './PastedTextFiles';
+import { shouldAttachPaste } from '../lib/pasted-text';
 
 
 const NO_COMMANDS: { name: string; description: string; argumentHint?: string }[] = [];
@@ -34,6 +36,10 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   const clearReview = useStore((s) => s.clearReview);
   const composerInsert = useStore((s) => s.composerInsert);
   const isActive = useStore((s) => s.activeId === thread.id);
+  const pasteText = useStore((s) => s.pasteText);
+  const removePastedText = useStore((s) => s.removePastedText);
+  const pastedFiles = thread.draftTextFiles ?? [];
+  const pasteBlocked = pastedFiles.some(file => file.pending || file.error);
 
   const [text, setText] = useState(thread.draft);
   const [images, setImages] = useState<ImageAttachment[]>(thread.draftImages);
@@ -129,7 +135,8 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
   }), [thread.id, thread.cwd, isActive, supportsImages, agentName]);
 
   const submit = () => {
-    if (!text.trim() && !images.length) return;
+    if (useStore.getState().threads[thread.id]?.draftTextFiles?.some(file => file.pending || file.error)) return;
+    if (pasteBlocked || (!text.trim() && !images.length && !pastedFiles.length)) return;
     if (images.length && !supportsImages) {
       useStore.getState().toast(t('composer.imagesUnsupported', { name: agentName }), 'error');
       return;
@@ -139,7 +146,7 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
     setImages([]);
   };
 
-  const canSend = text.trim().length > 0 || images.length > 0;
+  const canSend = !pasteBlocked && (text.trim().length > 0 || images.length > 0 || pastedFiles.length > 0);
 
   return (
     <div className="composer-stack">
@@ -262,6 +269,8 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
           )}
         </AnimatePresence>
 
+        <PastedTextFiles files={pastedFiles} onRemove={id => removePastedText(thread.id, id)} onRetry={file => { if (file.source) void pasteText(thread.id, file.source, file.id); }} />
+
         <textarea
           ref={taRef}
           className="composer-input"
@@ -283,8 +292,15 @@ export function Composer({ thread, hero }: { thread: Thread; hero?: boolean }) {
           onBlur={mention.sync}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);
-            if (!files.length) return;
+            const pasted = e.clipboardData.getData('text/plain');
             const hasImage = files.some((f) => f.type.startsWith('image/'));
+            if (!hasImage && shouldAttachPaste(pasted)) {
+              e.preventDefault();
+              // Preserve both the user's note and selection; the large payload becomes a file chip.
+              void pasteText(thread.id, pasted);
+              return;
+            }
+            if (!files.length) return;
             // Non-image files alongside real text: let the text paste through.
             if (!hasImage && e.clipboardData.getData('text/plain').trim()) return;
             e.preventDefault();

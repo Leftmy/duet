@@ -111,6 +111,7 @@ pub const CHANNELS: &[&str] = &[
     "files:watch",
     "files:write",
     "fs:attachment",
+    "fs:pasteText",
     "fs:index",
     "fs:stat",
     "instr:hooksSummary",
@@ -455,6 +456,7 @@ impl NativeCore {
             "files:unwatch" => self.files.unwatch(string(0)?),
             "fs:stat" => self.files.stat(arg(0)),
             "fs:attachment" => self.files.attachment(string(0)?),
+            "fs:pasteText" => self.files.paste_text(&self.storage.data, string(0)?),
             "app:pathExists" => Ok(json!(arg(0)
                 .as_str()
                 .filter(|s| !s.is_empty())

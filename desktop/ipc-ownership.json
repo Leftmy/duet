@@ -378,6 +378,11 @@
       "rustModule": "core/project_index.rs"
     },
     {
+      "channel": "fs:pasteText",
+      "owner": "rust",
+      "rustModule": "core/files.rs"
+    },
+    {
       "channel": "fs:stat",
       "owner": "rust",
       "rustModule": "core/files.rs"

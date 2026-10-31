@@ -18,6 +18,7 @@
     "native:preview": "node scripts/native.mjs preview",
     "typecheck": "tsc --noEmit -p .",
     "test:chat": "node scripts/test-chat-lifecycle.mjs",
+    "test:paste": "node scripts/test-pasted-text.mjs",
     "test:markdown": "node scripts/test-markdown.mjs",
     "test:agents": "node scripts/test-native-teams.mjs",
     "test:native": "node scripts/native-inspect.mjs",

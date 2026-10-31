@@ -53,6 +53,18 @@ export interface ImageAttachment {
   name?: string;
 }
 
+export interface PastedTextFile {
+  id: string;
+  name: string;
+  path: string;
+  lines: number;
+  bytes: number;
+  pending?: boolean;
+  error?: string;
+  /** Retained only until a write succeeds, so a failed paste can be retried. Never sent to a provider. */
+  source?: string;
+}
+
 export interface TextItem {
   kind: 'text';
   id: string;
@@ -320,6 +332,7 @@ export interface Thread {
   queue: QueuedMessage[];
   draft: string;
   draftImages: ImageAttachment[];
+  draftTextFiles?: PastedTextFile[];
   stopRequested?: boolean;
   autoTitled?: boolean;
   /** Project a new chat was created in (persisted per session once it has an id). */

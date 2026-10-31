@@ -6,6 +6,7 @@ import type {
   Effort,
   Entry,
   ImageAttachment,
+  PastedTextFile,
   ModelInfo,
   PermMode,
   Project,
@@ -17,6 +18,7 @@ import type {
   UsageSummary,
   ProviderId,
 } from './types';
+import { pastedLineCount, withPastedText } from './lib/pasted-text';
 import type { ProviderProbe } from './desk';
 import type { DeskEvent } from './events';
 import { applyAgentTranscripts, applyEvent, fromHistory } from './lib/reduce';
@@ -169,6 +171,8 @@ interface State {
   setThreadProject(id: string, projectId: string | null): void;
   setDraft(id: string, draft: string): void;
   setDraftImages(id: string, images: ImageAttachment[]): void;
+  pasteText(id: string, text: string, retryId?: string): Promise<void>;
+  removePastedText(id: string, fileId: string): void;
   removeQueued(id: string, qid: string): void;
   stopTask(id: string, taskId: string): void;
   messageAgent(id:string,runId:string,text:string):Promise<void>;
@@ -886,10 +890,12 @@ export const useStore = create<State>()((set, get) => {
 
     send(id, text, images) {
       const t = get().threads[id];
+      if (t?.draftTextFiles?.some(file => file.pending || file.error)) return;
+      text = withPastedText(text, t?.draftTextFiles ?? []);
       if (!t || t.loading || (!text.trim() && !images.length)) return;
       if (!providerEnabled(t.provider)) return get().toast(tr('store.providerDisabled'), 'error');
       if(t.provider==='codex'&&t.codex?.questions)update(id,x=>({...x,codex:{...x.codex,questions:null}}));
-      if(t.provider==='codex'&&!images.length){
+      if(t.provider==='codex'&&!images.length&&!t.draftTextFiles?.length){
         const command=/^\/(status|help|mcp|skills|goal|model|permissions|diff|new|clear|fork)(?:\s+([\s\S]*))?$/.exec(text.trim());
         if(command){
           const name=command[1],argument=command[2]?.trim()??'';
@@ -918,7 +924,7 @@ export const useStore = create<State>()((set, get) => {
         get().toast(tr('store.worktreeGone'), 'error');
         return;
       }
-      update(id, (x) => ({ ...x, draft: '', draftImages: [] }));
+      update(id, (x) => ({ ...x, draft: '', draftImages: [], draftTextFiles: [] }));
       if (t.status === 'running') {
         if (get().settings.followUp === 'steer' && get().providers[t.provider]?.caps?.steer !== false) {
           const uuid=crypto.randomUUID();
@@ -1154,6 +1160,25 @@ export const useStore = create<State>()((set, get) => {
 
     setDraftImages(id, draftImages) {
       update(id, (t) => ({ ...t, draftImages }));
+    },
+
+    async pasteText(id, text, retryId) {
+      if (!get().threads[id]) return;
+      const fileId = retryId ?? crypto.randomUUID();
+      const pending: PastedTextFile = { id: fileId, name: `pasted-text-${fileId}.txt`, path: '', lines: pastedLineCount(text), bytes: new TextEncoder().encode(text).length, pending: true, source: text };
+      update(id, t => ({ ...t, draftTextFiles: retryId ? (t.draftTextFiles ?? []).map(f => f.id === fileId ? pending : f) : [...(t.draftTextFiles ?? []), pending] }));
+      try {
+        const file = await window.desk.call<{ name: string; path: string; lines: number; bytes: number }>('fs:pasteText', text);
+        update(id, t => ({ ...t, draftTextFiles: (t.draftTextFiles ?? []).map(f => f.id === fileId ? { ...file, id: fileId } : f) }));
+      } catch (error: any) {
+        const message = String(error?.message ?? error);
+        update(id, t => ({ ...t, draftTextFiles: (t.draftTextFiles ?? []).map(f => f.id === fileId ? { ...pending, pending: false, error: message } : f) }));
+        get().toast(tr('composer.pasteFailed', { error: message }), 'error');
+      }
+    },
+
+    removePastedText(id, fileId) {
+      update(id, t => ({ ...t, draftTextFiles: (t.draftTextFiles ?? []).filter(f => f.id !== fileId) }));
     },
 
     removeQueued(id, qid) {

@@ -1461,6 +1461,40 @@ button {
   gap: 8px;
   overflow: hidden;
 }
+.pasted-text-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+  min-width: 0;
+}
+.pasted-text-file {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-elev);
+}
+.pasted-text-file.has-error { border-color: var(--danger, #e66b65); }
+.pasted-text-open {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 2px 5px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.pasted-text-open:disabled { cursor: default; }
+.pasted-text-open span { display: grid; min-width: 0; }
+.pasted-text-open strong { font-size: 12px; font-weight: 500; }
+.pasted-text-open small { font-size: 10px; color: var(--text-3); }
 .attachments > .thumb:first-child {
   margin-bottom: 8px;
 }

@@ -102,6 +102,23 @@ pub async fn dispatch(
                     builder = builder
                         .data_directory(std::path::PathBuf::from(profile).join("webview-ui"));
                 }
+                // WebView2 150+ ignores WEBVIEW2_* environment overrides in elevated
+                // hosts (including GitHub's Windows runners). Pass inspection args via
+                // the API, only for an explicitly isolated test/preview launch.
+                #[cfg(windows)]
+                if std::env::var("DUET_NATIVE_TEST").as_deref() == Ok("1")
+                    && std::env::var("DUET_NATIVE_PREVIEW").as_deref() == Ok("1")
+                {
+                    if let Some(port) = std::env::var("DUET_NATIVE_INSPECT_PORT")
+                        .ok()
+                        .and_then(|value| value.parse::<u16>().ok())
+                        .filter(|port| *port >= 1024)
+                    {
+                        builder = builder.additional_browser_args(&format!(
+                            "--remote-debugging-port={port}"
+                        ));
+                    }
+                }
                 let window = result(builder.build())?;
                 crate::media::configure(&window);
                 let ev_state = state.clone();

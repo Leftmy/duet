@@ -11,6 +11,7 @@ import { AgentEventRow, AgentMessageCard, AgentRow, AgentSendRow } from './Agent
 import { toolKind } from '../lib/tools';
 import { CHAPTER_TOOL, ChapterRow, DISMISS_TOOL, TASK_TOOL, TaskCard } from './SessionItems';
 import { t } from '../i18n';
+import { UserText } from './PastedTextFiles';
 
 const enter = {
   initial: { opacity: 0, y: 6 },
@@ -94,7 +95,7 @@ export const ItemView = memo(function ItemView({ item, live, cwd,threadId }: { i
                 ))}
               </div>
             )}
-            {item.text && <div className="bubble-text">{item.text}</div>}
+            {item.text && <UserText text={item.text} />}
             {item.error&&<div className="small tone-danger" role="alert">{item.error}</div>}
             {threadId&&(item.delivery==='failed'||item.delivery==='cancelled')&&<button className="btn ghost" onClick={()=>useStore.getState().retrySteer(threadId,item.id)}>{t('turn.steerRetry')}</button>}
           </div>
@@ -293,7 +294,7 @@ const UserMessage = memo(function UserMessage({ entry, threadId }: { entry: User
             ))}
           </div>
         )}
-        {entry.text && <div className="bubble-text">{entry.text}</div>}
+        {entry.text && <UserText text={entry.text} />}
       </div>
     </motion.div>
   );

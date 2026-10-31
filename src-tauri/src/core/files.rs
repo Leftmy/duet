@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::Read,
+    io::{Read, Write},
     path::Path,
     sync::{Arc, Condvar, Mutex},
     thread::JoinHandle,
@@ -152,6 +152,33 @@ impl Files {
             json!({"name":path.file_name().unwrap_or_default().to_string_lossy(),"mediaType":media,"data":base64::engine::general_purpose::STANDARD.encode(bytes)}),
         )
     }
+    pub fn paste_text(&self, data: &Path, text: &str) -> CoreResult {
+        if text.is_empty() || text.len() > MAX_WRITE {
+            return Err("Pasted text must contain between 1 byte and 8 MiB".into());
+        }
+        let dir = data.join("attachments/pasted-text");
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let name = format!("pasted-text-{}.txt", uuid::Uuid::new_v4());
+        let path = dir.join(&name);
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&path).map_err(|e| e.to_string())?;
+        if let Err(error) = file.write_all(text.as_bytes()).and_then(|_| file.sync_all()) {
+            drop(file);
+            let _ = fs::remove_file(&path);
+            return Err(error.to_string());
+        }
+        // Match textarea line counting, including CR-only pastes and a final empty line.
+        let lines = text.as_bytes().iter().enumerate().filter(|(i, b)| {
+            **b == b'\r' || (**b == b'\n' && (*i == 0 || text.as_bytes()[*i - 1] != b'\r'))
+        }).count() + 1;
+        Ok(json!({"path":path,"name":name,"bytes":text.len(),"lines":lines}))
+    }
     pub fn watch(&self, file: &str) -> CoreResult {
         if !Path::new(file).exists() {
             return Ok(Value::Null);
@@ -229,6 +256,26 @@ impl Drop for Files {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pasted_text_is_exact_unique_persistent_and_bounded() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = Files::new(Arc::new(|_, _| {}));
+        let text = "Привет 🦀\r\nline\rnext\n";
+        let first = files.paste_text(dir.path(), text).unwrap();
+        let second = files.paste_text(dir.path(), text).unwrap();
+        assert_ne!(first["path"], second["path"]);
+        assert_eq!(first["bytes"], text.len());
+        assert_eq!(first["lines"], 4);
+        let path = Path::new(first["path"].as_str().unwrap());
+        assert!(path.starts_with(dir.path().join("attachments/pasted-text")));
+        assert_eq!(fs::read_to_string(path).unwrap(), text);
+        drop(files);
+        assert_eq!(fs::read_to_string(path).unwrap(), text, "History links survive app shutdown");
+        let files = Files::new(Arc::new(|_, _| {}));
+        assert!(files.paste_text(dir.path(), "").is_err());
+        assert!(files.paste_text(dir.path(), &"x".repeat(MAX_WRITE + 1)).is_err());
+        assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 2);
+    }
     #[test]
     fn editor_size_binary_and_attachment_contracts() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,4 +1,12 @@
 {
+  "pastedText": "Pasted text",
+  "pastedLines_one": "{count} line",
+  "pastedLines_other": "{count} lines",
+  "savingPaste": "Saving pasted text…",
+  "pasteError": "Text was not saved",
+  "pasteFailed": "Could not save pasted text: {error}. The attachment is kept for retry.",
+  "retryPaste": "Retry saving text",
+  "removePaste": "Remove text attachment",
   "imagesUnsupported": "{name} currently accepts text only. Remove images before sending.",
   "reviewComments_one": "{count} code comment",
   "reviewComments_other": "{count} code comments",
