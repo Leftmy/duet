@@ -41,8 +41,13 @@ try{
  const stopped=await operation(id,provider,'run_agent',{agent:'codex',task:'TEAM_HOLD_LONG',background:true});
  const session=await wait(e=>e.payload?.threadId===id&&e.payload.ev?.type==='agent'&&e.payload.ev.runId===stopped.run_id&&e.payload.ev.sessionId);
  await call('agent:send',{threadId:id,delegate:stopped.run_id,text:'OLD_UI_PENDING'});
- await call('agent:stopTask',id,stopped.run_id);
- await wait(e=>e.payload?.threadId===id&&e.payload.ev?.runId===stopped.run_id&&e.payload.ev.status==='stopped');
+ const stopAt=events.length;const stopping=call('agent:stopTask',id,stopped.run_id);
+ await wait(e=>events.indexOf(e)>=stopAt&&e.payload?.threadId===id&&e.payload.ev?.runId===stopped.run_id&&e.payload.ev.status==='stopped');
+ // Release startup only after observing stop: no timing assumptions or retries.
+ fs.writeFileSync(path.join(root,'codex-start-release-'+session.payload.ev.sessionId),'release');
+ await stopping;
+ await new Promise(r=>setTimeout(r,50));
+ assert.ok(!events.slice(stopAt).some(e=>e.payload?.threadId===id&&((e.payload.ev?.runId===stopped.run_id&&e.payload.ev.status==='running')||(e.payload.ev?.agent===session.payload.ev.id&&e.payload.ev.type==='step'))),'Stopped agent must reject late startup/step callbacks');
  const tracePath=path.join(root,'codex-control-trace.jsonl');let trace=[];for(let n=0;n<100;n++){trace=fs.existsSync(tracePath)?fs.readFileSync(tracePath,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];if(trace.some(e=>e.method==='thread/unsubscribe'&&e.params.threadId===session.payload.ev.sessionId))break;await new Promise(r=>setTimeout(r,10));}
  const own=trace.filter(e=>e.params.threadId===session.payload.ev.sessionId);assert.deepEqual(own.slice(-2).map(e=>e.method),['turn/interrupt','thread/unsubscribe']);
  const resumedAt=events.length;await call('agent:send',{threadId:id,delegate:stopped.run_id,text:'UI_AGENT_RESUMED_OK'});

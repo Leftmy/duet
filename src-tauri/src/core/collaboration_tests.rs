@@ -1,5 +1,77 @@
 use super::*;
 #[test]
+fn stop_waits_for_pending_dispatch_and_rejects_late_progress() {
+    let (_dir, agents, root, _root_run, events) = fixture();
+    let (target, run) = child(&agents, &root, "starting-child");
+    let dispatch = run.dispatch.lock().unwrap();
+    run.sending.store(true, Ordering::Release);
+    let owner = agents.clone();
+    let stopping = target.clone();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        owner.stop_tree(&stopping);
+        done_tx.send(()).unwrap();
+    });
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(_, v)| v["ev"]["runId"] == target.id && v["ev"]["status"] == "stopped")
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Stop was not published before waiting for startup"
+        );
+        std::thread::yield_now();
+    }
+    assert!(
+        done_rx.try_recv().is_err(),
+        "Cleanup must wait for the pending dispatch"
+    );
+    let count = events.lock().unwrap().len();
+    agents.emit_event(&run, json!({"type":"step"}));
+    agents.emit_event(
+        &run,
+        json!({"type":"text","id":"late","text":"late startup"}),
+    );
+    agents.emit_event(&run, json!({"type":"turn.end","text":"late completion"}));
+    assert_eq!(events.lock().unwrap().len(), count);
+    assert!(!run.running.load(Ordering::Acquire));
+    assert_eq!(target.result.lock().unwrap()["stopped"], true);
+    drop(dispatch);
+    worker.join().unwrap();
+    done_rx.recv().unwrap();
+    assert!(!Agents::current(&run));
+    let successor = agents.start(&target);
+    agents.emit_event(&run, json!({"type":"step"}));
+    assert!(!successor.running.load(Ordering::Acquire));
+    assert!(Agents::current(&successor));
+    agents.shutdown();
+}
+
+#[test]
+fn explicit_stop_status_does_not_depend_on_concurrent_running_flag() {
+    let (_dir, agents, root, _root_run, events) = fixture();
+    let (target, run) = child(&agents, &root, "stop-status");
+    // Model the late startup flag observed in the failing CI trace.
+    run.running.store(true, Ordering::Release);
+    agents.route_team_event(
+        &run,
+        &target,
+        json!({"type":"turn.end","text":"Stopped.","stopped":true}),
+    );
+    assert!(events
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|(_, v)| v["ev"]["runId"] == target.id && v["ev"]["status"] == "stopped"));
+    agents.shutdown();
+}
+#[test]
 fn reading_events_acknowledges_mailbox_without_duplicate_model_turns() {
     let (_dir, agents, root, run, _) = fixture();
     let (a, a_run) = child(&agents, &root, "a");

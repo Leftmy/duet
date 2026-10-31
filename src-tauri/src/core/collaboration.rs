@@ -306,7 +306,12 @@ impl Agents {
                     ev["parentId"] = json!(sub.tool);
                 }
                 "turn.end" if own_end => {
-                    ev = json!({"type":"agent","id":sub.tool,"status":state(t),"result":event["error"].as_str().filter(|e|!e.is_empty()).or(event["text"].as_str()).unwrap_or(""),"runId":t.id});
+                    let status = if event["stopped"] == true {
+                        "stopped"
+                    } else {
+                        state(t)
+                    };
+                    ev = json!({"type":"agent","id":sub.tool,"status":status,"result":event["error"].as_str().filter(|e|!e.is_empty()).or(event["text"].as_str()).unwrap_or(""),"runId":t.id});
                 }
                 "session" if inner.is_none() => {
                     ev = json!({"type":"agent","id":sub.tool,"sessionId":event["sessionId"],"runId":t.id});
@@ -503,7 +508,9 @@ impl Agents {
             || t.mailbox_paused.load(Ordering::Acquire)
             || t.inbox.lock().unwrap().is_empty()
             || t.run.lock().unwrap().as_ref().is_some_and(|r| {
-                r.running.load(Ordering::Acquire) || r.sending.load(Ordering::Acquire)
+                r.running.load(Ordering::Acquire)
+                    || r.sending.load(Ordering::Acquire)
+                    || r.stopping.load(Ordering::Acquire)
             })
             || t.delivering.swap(true, Ordering::AcqRel)
         {
@@ -538,10 +545,23 @@ impl Agents {
         }
         let run = t.run.lock().unwrap().clone();
         if let Some(run) = run {
+            {
+                let _events = run.events.lock().unwrap();
+                run.stopping.store(true, Ordering::Release);
+            }
             self.emit_event(
                 &run,
                 json!({"type":"turn.end","text":"Stopped.","stopped":true,"isError":false}),
             );
+            self.cancel(&run, None);
+            // The session event precedes the turn/start reply. Let this run's
+            // initial dispatch record its turn id before interrupt/unsubscribe.
+            // Other agents use independent operation locks and remain live.
+            let _dispatch = if run.provider == "codex" {
+                Some(run.dispatch.lock().unwrap())
+            } else {
+                None
+            };
             self.stop_run(&run);
         }
         self.collaboration.wake();

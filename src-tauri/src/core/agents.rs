@@ -52,6 +52,9 @@ struct Run {
     provider: String,
     client: Mutex<Option<Arc<Client>>>,
     operation: Mutex<()>,
+    dispatch: Mutex<()>,
+    events: Mutex<()>,
+    stopping: AtomicBool,
     sends: Mutex<std::collections::VecDeque<Value>>,
     sending: AtomicBool,
     alive: AtomicBool,
@@ -193,6 +196,9 @@ impl Agents {
             provider: t.provider.lock().unwrap().clone(),
             client: Mutex::new(None),
             operation: Mutex::new(()),
+            dispatch: Mutex::new(()),
+            events: Mutex::new(()),
+            stopping: AtomicBool::new(false),
             sends: Mutex::new(Default::default()),
             sending: AtomicBool::new(false),
             alive: AtomicBool::new(true),
@@ -233,7 +239,10 @@ impl Agents {
         })
     }
     fn emit_event(&self, run: &Arc<Run>, mut ev: Value) {
-        if !Self::current(run) {
+        // Serialize callbacks with the stop barrier. A callback that passed an
+        // earlier liveness check must not publish progress after a terminal stop.
+        let event_guard = run.events.lock().unwrap();
+        if !Self::current(run) || (run.stopping.load(Ordering::Acquire) && ev["stopped"] != true) {
             return;
         }
         let Some(t) = run.thread.upgrade() else {
@@ -348,6 +357,7 @@ impl Agents {
             let sid = t.session.lock().unwrap().clone();
             if !sid.is_empty() {
                 if let Err(e) = self.history.journal_append(&run.provider, &sid, &ev) {
+                    drop(event_guard);
                     self.failed(run, e);
                     return;
                 }
@@ -378,10 +388,14 @@ impl Agents {
         // Serialize cleanup with acquisition of the next run of this same chat.
         // Event readers only take run, so initialization responses can still be consumed.
         let _lifecycle = thread.as_ref().map(|t| t.lifecycle.lock().unwrap());
-        if !run.alive.swap(false, Ordering::AcqRel) {
-            return;
+        {
+            let _events = run.events.lock().unwrap();
+            run.stopping.store(true, Ordering::Release);
+            if !run.alive.swap(false, Ordering::AcqRel) {
+                return;
+            }
+            run.running.store(false, Ordering::Release);
         }
-        run.running.store(false, Ordering::Release);
         self.cancel(run, None);
         self.collaboration.wake();
         if let Some(c) = run.client.lock().unwrap().take() {
@@ -493,6 +507,9 @@ impl Agents {
             }
         }
         let run = self.start(&t);
+        if run.stopping.load(Ordering::Acquire) {
+            return Err("Agent is stopping; retry after it stops".into());
+        }
         let was_running = run.running.swap(true, Ordering::AcqRel);
         if was_running
             && (matches!(provider, "antigravity" | "gemini") || payload["_idleOnly"] == true)
@@ -546,7 +563,8 @@ impl Agents {
             } else {
                 Some(r.operation.lock().unwrap())
             };
-            if !Self::current(&r) {
+            let _dispatch = r.dispatch.lock().unwrap();
+            if !Self::current(&r) || r.stopping.load(Ordering::Acquire) {
                 r.sends.lock().unwrap().clear();
                 r.sending.store(false, Ordering::Release);
                 return;
