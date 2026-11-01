@@ -59,6 +59,17 @@ if (!location.hash.startsWith('#detached=')) (async () => {
     assert((await contextCall('job',{job_id:contextJob.job_id})).status==='applied','native Linux context edits apply in the same chat');
     assert(!(await contextCall('inspect')).blocks.some(b=>b.id===tool.id)&&(await contextCall('read',{id:tool.id})).text.includes('CONTEXT_OBSOLETE_CANARY'),'native Linux archive preserves readable originals');
     await window.desk.closeThread(contextId);
+    const workbenchIds=[];
+    for(const cwd of '__DUET_NATIVE_LINUX_WORKSPACES__'){store.setState({activeId:''});const id=store.getState().newThread(cwd);workbenchIds.push(id);await store.getState().send(id,'LINUX_WORKSPACE_TASK',[]);}
+    await wait(()=>workbenchIds.every(id=>store.getState().threads[id].status==='idle'));
+    document.querySelector('[data-workbench-toggle]').click();await wait(()=>document.querySelector('[data-workbench]'));
+    assert((await window.desk.call('desk:workbench',{action:'inspect'})).resources.rssBytes>1024*1024,'native Linux resource accounting reports the app process tree');
+    [...document.querySelectorAll('.workbench-tabs button')].find(b=>b.textContent==='Conflicts').click();
+    await wait(()=>[...document.querySelectorAll('[data-workbench] button')].some(b=>b.textContent==='Check workspaces'));
+    [...document.querySelectorAll('[data-workbench] button')].find(b=>b.textContent==='Check workspaces').click();
+    await wait(()=>document.querySelector('.workbench-conflict')?.textContent.includes('conflict.txt'));
+    assert(true,'native Linux task panel renders actual Git conflict previews');
+    document.querySelector('[data-workbench] button[aria-label="Close"]').click();for(const id of workbenchIds)await window.desk.closeThread(id);
     const state=await window.__TAURI_INTERNALS__.invoke('window_control',{action:'state'});assert(typeof state.maximized==='boolean','native Linux window state');
     await window.desk.call('win:detach',{threadId:'linux-detached',title:'Linux detached fixture',cwd:'/tmp'});await wait(async()=>(await window.desk.call('win:list')).length===1);assert((await window.desk.call('win:list')).length===1,'native Linux detached window');
     assert(!document.querySelector('.ui-failure'),'React remains responsive after native services');report.ok=true;

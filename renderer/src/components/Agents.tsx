@@ -221,7 +221,7 @@ function AgentDetail({ thread, agent, onCollapse }: { thread: Thread; agent: Age
           {agent.items.length > shown && <button className="side-more" onClick={() => setShown((n) => n + 100)}>{t('agents.showEarlier', { count: agent.items.length - shown })}</button>}
           {agent.items.slice(-shown).map((it) => (
             <motion.div key={it.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-              <ItemView item={it} live={running} cwd={thread.cwd} />
+              <ItemView item={it} live={running} cwd={agent.cwd??thread.cwd} />
             </motion.div>
           ))}
           {agent.historical && !agent.transcriptLoaded && <div className="muted small">{t('agents.loadingTranscript')}</div>}

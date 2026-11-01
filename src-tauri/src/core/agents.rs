@@ -3,6 +3,10 @@
 mod collaboration;
 #[path = "context_agent.rs"]
 mod context_agent;
+#[path = "workbench_agent.rs"]
+mod workbench_agent;
+#[path = "roles_agent.rs"]
+mod roles_agent;
 use super::{
     cli, codex, context,
     events::{self, arr, s, HistoryState},
@@ -90,6 +94,11 @@ pub struct Agents {
     contexts: context::Contexts,
     context_worker: AtomicBool,
     context_gateway: Mutex<Option<context_agent::Gateway>>,
+    dispatch: Mutex<super::dispatch::Dispatcher>,
+    queue_log: super::queue_log::QueueLog,
+    dispatch_pumping: AtomicBool,
+    resources: Mutex<super::resources::Resources>,
+    workspaces: Mutex<super::workspaces::Workspaces>,
     team_admission: Mutex<()>,
     storage: Arc<Storage>,
     history: Arc<History>,
@@ -115,6 +124,11 @@ impl Agents {
             contexts: context::Contexts::new(storage.data.join("native/context.sqlite3")),
             context_worker: AtomicBool::new(false),
             context_gateway: Mutex::new(None),
+            dispatch: Mutex::new(Default::default()),
+            queue_log: super::queue_log::QueueLog::new(storage.data.join("native/queued-input.sqlite3")),
+            dispatch_pumping: AtomicBool::new(false),
+            resources: Mutex::new(Default::default()),
+            workspaces: Mutex::new(Default::default()),
             team_admission: Mutex::new(()),
             storage,
             history,
@@ -278,6 +292,8 @@ impl Agents {
                 }
                 if let Some(id) = ev["sessionId"].as_str() {
                     *t.session.lock().unwrap() = id.into();
+                    let role=t.config.lock().unwrap()["role"].as_str().map(str::to_owned);
+                    if let Some(role)=role{if let Err(error)=self.queue_log.set_role(&roles_agent::role_key(&t),&run.provider,id,&role){drop(event_guard);self.failed(run,error);return;}}
                     if let Some(sub) = &t.sub {
                         if let Some(parent) = self.find(&sub.parent) {
                             let parent_id = parent.session.lock().unwrap().clone();
@@ -296,7 +312,9 @@ impl Agents {
                 let scope=t.context_scope.lock().unwrap().clone();
                 let checkpoint=!t.hidden&&ev["stopped"]!=true&&ev["isError"]!=true&&(t.context_waiting.load(Ordering::Acquire)||self.contexts.waiting(&scope).unwrap_or(false));
                 if checkpoint {ev["contextCheckpoint"]=json!(true);t.context_waiting.store(true,Ordering::Release);}
-                if (t.hidden || t.sub.is_some())&&!checkpoint {
+                let waiting_agents=ev["stopped"]!=true&&ev["isError"]!=true&&self.children(&t.id).iter().any(|child|self.dispatch.lock().unwrap().queued(&child.id));
+                if waiting_agents{ev["waitingAgents"]=json!(true);t.context_waiting.store(true,Ordering::Release);}
+                if (t.hidden || t.sub.is_some())&&!checkpoint&&!waiting_agents {
                     let mut result = ev.clone();
                     result["turnSequence"] = json!(t.turn_sequence.load(Ordering::Acquire));
                     for key in ["text", "error"] {
@@ -398,6 +416,7 @@ impl Agents {
             }
         }
         self.route_team_event(run, &t, ev);
+        if context_boundary {self.dispatch_finish(&t);}
         if context_boundary&&!t.hidden&&!run.stopping.load(Ordering::Acquire) {
             let scope=t.context_scope.lock().unwrap().clone();
             if !scope.is_empty(){let sid=t.session.lock().unwrap().clone();let _=self.contexts.sync_binding(&scope,&run.provider,&sid);self.context_changed(&t,"boundary",json!({}));if self.contexts.ready(&scope).is_ok_and(|j|!j.is_null()){if let Some(owner)=self.weak.upgrade(){let target=t.clone();let _=owner.spawn(move|owner|owner.context_continue(&target));}}}
@@ -507,10 +526,26 @@ impl Agents {
         }
         let provider = payload["provider"].as_str().unwrap_or("claude");
         let t = self.thread(id, provider)?;
-        self.send_thread(t, payload)
+        let result=self.send_thread(t.clone(),payload);if result.is_err(){self.dispatch_finish(&t);}result
     }
     fn send_thread(self: &Arc<Self>, t: Arc<Thread>, payload: &Value) -> CoreResult {
         let _context_gate = t.context_gate.lock().unwrap();
+        cli::require_enabled(payload["provider"].as_str().unwrap_or("claude"))?;
+        if t.closed.load(Ordering::Acquire){return Err("Chat closed".into())}
+        if payload["_idleOnly"]==true&&t.run.lock().unwrap().as_ref().is_some_and(|r|r.running.load(Ordering::Acquire)||r.sending.load(Ordering::Acquire)){return Err("Agent is still running; queue the message".into())}
+        if payload["_idleOnly"]!=true&&payload["_dispatchGranted"]!=true{t.mailbox_paused.store(false,Ordering::Release);}
+        if t.config.lock().unwrap()["role"].is_null(){let key=format!("{}:{}",s(payload,"provider"),s(payload,"resume"));let scope=self.contexts.resolve(&t.id,s(payload,"provider"),s(payload,"resume"))?;if let Some(role)=self.queue_log.role(&format!("scope:{scope}"),&key)?{t.config.lock().unwrap()["role"]=json!(role);}}
+        if self.dispatch_admit(&t,payload)?{return Ok(json!(true))}
+        let isolated=t.config.lock().unwrap()["_isolatedBase"].as_str().map(str::to_owned);
+        let effective=if let Some(base)=isolated{
+            let workspace=super::git::worktree(&self.storage,"wt:create",&[json!(base)])?;
+            let mut cfg=t.config.lock().unwrap();cfg["cwd"]=workspace["path"].clone();cfg["dirs"]=json!([]);cfg["_workspace"]=workspace.clone();cfg["_isolatedBase"]=Value::Null;
+            let mut p=payload.clone();p["cwd"]=cfg["cwd"].clone();p["dirs"]=json!([]);p["_isolatedBase"]=Value::Null;drop(cfg);
+            self.team_record(&t,json!({"type":"workspace.ready","workspace":workspace}));
+            if let Some(sub)=&t.sub{(self.emit)("agent:event",json!({"threadId":self.family_root(&t).id,"ev":{"type":"agent","id":sub.tool,"runId":t.id,"cwd":workspace["path"],"role":"executor"}}));}
+            Some(p)
+        }else{None};
+        let payload=effective.as_ref().unwrap_or(payload);
         if let Some(job_id)=payload["_contextJobId"].as_str(){let scope=t.context_scope.lock().unwrap().clone();if self.contexts.ready(&scope)?["id"]!=job_id{return Ok(json!(false))}}
         self.context_before_send(&t, payload)?;
         cli::require_enabled(payload["provider"].as_str().unwrap_or("claude"))?;
@@ -556,6 +591,9 @@ impl Agents {
                 *t.session.lock().unwrap() = resume.into();
             }
         }
+        {let mut cfg=t.config.lock().unwrap();if roles_agent::read_only(&cfg){cfg["permissionMode"]=json!("plan");cfg["chrome"]=json!(false);}}
+        let role=t.config.lock().unwrap()["role"].as_str().unwrap_or("executor").to_owned();
+        if !t.hidden{(self.emit)("agent:event",json!({"threadId":t.id,"ev":{"type":"role","role":role}}));}
         let run = self.start(&t);
         if !t.hidden && payload["_contextContinue"] != true {
             let scope=t.context_scope.lock().unwrap().clone();
@@ -606,6 +644,7 @@ impl Agents {
                 if let Some(t) = r.thread.upgrade() {
                     owner.schedule_inbox(&t);
                     owner.context_continue(&t);
+                    owner.dispatch_finish(&t);
                 }
                 return;
             };
@@ -650,6 +689,7 @@ impl Agents {
         Ok(json!(true))
     }
     fn message_receipt(&self, run: &Arc<Run>, message: &Value, status: &str, error: Option<&str>) {
+        if status=="accepted"{if let Err(error)=self.queue_log.delivered(message){(self.emit)("desk:workbench-update",json!({"error":error}));}}
         if let Some(id) = message["uuid"].as_str() {
             self.emit_event(
                 run,
@@ -701,6 +741,7 @@ impl Agents {
             let result = if resume.is_empty() {
                 let tools=if cfg["contextCompressor"]==true{Vec::new()}else{toolsets::all(t.sub.as_ref().map(|s|s.depth).unwrap_or(0)).into_iter().flat_map(|set|arr(&set["tools"]).iter().map(|tool|json!({"namespace":set["name"],"name":tool["name"],"description":tool["description"],"inputSchema":tool["inputSchema"]})).collect::<Vec<_>>()).collect::<Vec<_>>()};
                 params["dynamicTools"] = json!(tools);
+                if roles_agent::read_only(&cfg){let mut config=self.context_codex_config(&c)?;config["features"]["shell_tool"]=json!(true);params["config"]=config;}
                 if cfg["contextCompressor"]==true {params["ephemeral"]=json!(true);params["sandbox"]=json!("read-only");params["approvalPolicy"]=json!("never");params["config"]=self.context_codex_config(&c)?;}
                 c.request("thread/start", params)?
             } else {
@@ -755,6 +796,7 @@ impl Agents {
             "--permission-mode".into(),
             cfg["permissionMode"].as_str().unwrap_or("default").into(),
         ];
+        if roles_agent::read_only(&cfg){args.extend(["--tools".into(),"Read,Glob,Grep,WebSearch,WebFetch,AskUserQuestion,ExitPlanMode".into(),"--strict-mcp-config".into(),"--setting-sources=".into()]);}
         for (key, flag) in [("model", "--model"), ("effort", "--effort")] {
             let v = s(&cfg, key);
             if !v.is_empty() && v != "default" {
@@ -836,7 +878,8 @@ impl Agents {
     fn send_now(self: &Arc<Self>, run: &Arc<Run>, msg: &Value) -> Result<(), String> {
         let c = self.ensure(run)?;
         if !Self::current(run) {
-            return Ok(());
+            if run.provider!="codex"{c.close()}else if let Some(t)=run.thread.upgrade(){let sid=t.session.lock().unwrap().clone();if !sid.is_empty(){let _=c.send_request("thread/unsubscribe",json!({"threadId":sid}));}}
+            return Err("Run closed before dispatch".into());
         }
         let t = run.thread.upgrade().ok_or("Chat closed")?;
         let (instructions, cfg) = {
@@ -1261,6 +1304,7 @@ impl Agents {
         let Some(t) = run.thread.upgrade() else {
             return json!({"decision":"deny"});
         };
+        if roles_agent::read_only(&t.config.lock().unwrap())&&!matches!(s(&req,"toolName"),"AskUserQuestion"|"ExitPlanMode"){return json!({"decision":"deny","message":"The agent has a read-only role"})}
         if t.hidden {
             return json!({"decision":"deny","message":"No user is available to approve this background operation"});
         }
@@ -1293,6 +1337,7 @@ impl Agents {
         req["provider"] = json!(run.provider);
         self.team_record(&t, json!({"type":"permission.requested","request":req}));
         (self.emit)("agent:permission", req);
+        self.dispatch_waiting(&t);
         let already_cancelled = run
             .requests
             .lock()
@@ -1306,6 +1351,7 @@ impl Agents {
             .recv_timeout(Duration::from_secs(24 * 3600))
             .unwrap_or(json!({"decision":"deny","message":"Permission request expired"}));
         self.approvals.lock().unwrap().remove(&id);
+        let result=if !self.dispatch_resume(&t,run){json!({"decision":"deny","message":"Run cancelled while waiting for capacity"})}else{result};
         self.team_record(
             &t,
             json!({"type":"permission.resolved","reqId":id,"decision":result["decision"]}),
@@ -1453,6 +1499,7 @@ impl Agents {
         let t = run.thread.upgrade().ok_or("Chat closed")?;
         let cfg = t.config.lock().unwrap().clone();
         let mode = s(&cfg, "permissionMode");
+        if roles_agent::read_only(&cfg)&&matches!(method,"item/commandExecution/requestApproval"|"item/fileChange/requestApproval"|"execCommandApproval"|"applyPatchApproval"|"item/permissions/requestApproval"){return Ok(if method=="item/permissions/requestApproval"{json!({"permissions":{},"scope":"turn"})}else{json!({"decision":"decline"})})}
         if cfg["contextCompressor"]==true{return match method{"item/commandExecution/requestApproval"|"item/fileChange/requestApproval"|"execCommandApproval"|"applyPatchApproval"=>Ok(json!({"decision":"decline"})),"item/permissions/requestApproval"=>Ok(json!({"permissions":{},"scope":"turn"})),_=>Err("Tools are disabled for context compression".into())}}
         let source = format!("codex:{id}");
         match method {
@@ -1605,6 +1652,7 @@ impl Agents {
             args.extend(["--agent".into(),"duet-context-compressor".into(),"--settings".into(),json!({"toolPermission":"strict","permissions":{"deny":["read_file(*)","write_file(*)","command(*)","read_url(*)","execute_url(*)","mcp(*)"]}}).to_string()]);
         }
         let mode = s(cfg, "permissionMode");
+        if agy && roles_agent::read_only(cfg) {args.extend(["--settings".into(),json!({"toolPermission":"strict","permissions":{"deny":["write_file(*)","command(*)","mcp(*)"]}}).to_string()]);}
         if agy {
             match mode {
                 "bypassPermissions" => args.push("--dangerously-skip-permissions".into()),
@@ -1950,6 +1998,7 @@ impl Agents {
             .collect()
     }
     fn close_thread(&self, id: &str) {
+        if let Some(t)=self.find(id){self.dispatch_cancel(&t);}
         if let Some(t)=self.find(id){self.context_cancel(&t);}
         if let Some(t) = self.find(id) {
             t.closed.store(true, Ordering::Release);
@@ -1966,6 +2015,8 @@ impl Agents {
             }
         }
         self.threads.lock().unwrap().remove(id);
+        self.dispatch.lock().unwrap().active.remove(id);
+        self.dispatch_pump();
         self.collaboration.wake();
     }
     pub fn shutdown(&self) {
@@ -2047,6 +2098,7 @@ impl Agents {
     ) -> CoreResult {
         let t = run.thread.upgrade().ok_or("Chat closed")?;
         let depth = t.sub.as_ref().map(|s| s.depth).unwrap_or(0);
+        if roles_agent::read_only(&t.config.lock().unwrap())&&set=="desk-browser"&&!matches!(name,"read"|"read_page"|"screenshot"|"list_tabs"){return Ok(toolsets::text("This agent has a read-only role; interactive browser actions are disabled",true))}
         if t.config.lock().unwrap()["contextCompressor"]==true{return Err("Tools are disabled for context compression".into())}
         let sets = toolsets::all(depth);
         let definition = sets
@@ -2250,6 +2302,9 @@ impl Agents {
                 c.request("thread/goal/set", params)
             }
             "review" | "compact" => {
+                if run.running.load(Ordering::Acquire){return Err("Chat is busy".into())}
+                if action=="review"&&p["target"].is_object()&&!matches!(s(&p["target"],"type"),"uncommittedChanges"|"baseBranch"|"commit"|"custom"){return Err("Unsupported review target".into())}
+                self.dispatch_control(&t,"codex")?;
                 if run.running.swap(true, Ordering::AcqRel) {
                     return Err("Chat is busy".into());
                 }
@@ -2294,8 +2349,9 @@ impl Agents {
   "agent:probe"=>self.probe(p==&true),"agent:usage"=>self.usage(p.as_str().unwrap_or("claude")),"agent:send"=>self.send(p),
   "agent:respondPermission"=>{let mut pending=self.approvals.lock().unwrap();let id=s(p,"reqId");if pending.get(id).is_some_and(|a|a.thread==tid){if let Some(a)=pending.remove(id){let _=a.tx.send(p.clone());return Ok(json!(true))}}Ok(json!(false))},
   "desk:switch-provider"=>self.context_switch(p),
-  "agent:configure"=>{let Some(t)=self.find(tid)else{return Ok(json!(false))};{let mut cfg=t.config.lock().unwrap();for k in["model","effort","permissionMode","serviceTier"]{if let Some(v)=p.get(k){cfg[k]=v.clone()}}}let r=t.run.lock().unwrap().clone();if let Some(r)=r{if r.provider=="claude"{let _lock=r.operation.lock().unwrap();let c=self.ensure(&r)?;for(key,subtype,field)in[("model","set_model","model"),("permissionMode","set_permission_mode","mode")]{if let Some(v)=p.get(key){c.control(json!({"subtype":subtype,field:v}))?;}}if let Some(effort)=p.get("effort"){c.control(json!({"subtype":"apply_flag_settings","settings":{"effortLevel":effort}}))?;}}}Ok(json!(true))},
-  "agent:interrupt"=>{let id=p.as_str().unwrap_or("");if self.context_interrupt_waiting(id){return Ok(json!(true))}if let Some(t)=self.find(id){self.context_cancel(&t);t.mailbox_paused.store(true,Ordering::Release);t.inbox.lock().unwrap().clear();}if let Ok(r)=self.active(id){self.cancel(&r,None);match r.provider.as_str(){"claude"=>{let c=r.client.lock().unwrap().clone();if let Some(c)=c{c.control(json!({"subtype":"interrupt","cancel_queued":true}))?;}},"codex"=>{let turn=r.codex.lock().unwrap().turn.clone().unwrap_or_default();let sid=r.thread.upgrade().map(|t|t.session.lock().unwrap().clone()).unwrap_or_default();if !turn.is_empty(){self.codex_server()?.request("turn/interrupt",json!({"threadId":sid,"turnId":turn}))?;}},_=>{self.emit_event(&r,json!({"type":"turn.end","text":"","isError":false}));self.stop_run(&r);}}}for t in self.children(id){self.stop_tree(&t)}Ok(json!(true))},
+  "desk:workbench"=>self.workbench(p),
+  "agent:configure"=>{let Some(t)=self.find(tid)else{return Ok(json!(false))};if roles_agent::read_only(&t.config.lock().unwrap())&&p["permissionMode"].as_str().is_some_and(|m|m!="plan"){return Err("Change the agent role before enabling writes".into())}{let mut cfg=t.config.lock().unwrap();for k in["model","effort","permissionMode","serviceTier"]{if let Some(v)=p.get(k){cfg[k]=v.clone()}}}let r=t.run.lock().unwrap().clone();if let Some(r)=r{if r.provider=="claude"{let _lock=r.operation.lock().unwrap();let c=self.ensure(&r)?;for(key,subtype,field)in[("model","set_model","model"),("permissionMode","set_permission_mode","mode")]{if let Some(v)=p.get(key){c.control(json!({"subtype":subtype,field:v}))?;}}if let Some(effort)=p.get("effort"){c.control(json!({"subtype":"apply_flag_settings","settings":{"effortLevel":effort}}))?;}}}Ok(json!(true))},
+  "agent:interrupt"=>{let id=p.as_str().unwrap_or("");if let Some(t)=self.find(id){if self.dispatch_cancel(&t){for child in self.children(id){self.stop_tree(&child)}return Ok(json!(true))}}if self.context_interrupt_waiting(id){return Ok(json!(true))}if let Some(t)=self.find(id){self.context_cancel(&t);t.mailbox_paused.store(true,Ordering::Release);t.inbox.lock().unwrap().clear();}if let Ok(r)=self.active(id){self.cancel(&r,None);match r.provider.as_str(){"claude"=>{let c=r.client.lock().unwrap().clone();if let Some(c)=c{c.control(json!({"subtype":"interrupt","cancel_queued":true}))?;}},"codex"=>{let turn=r.codex.lock().unwrap().turn.clone().unwrap_or_default();let sid=r.thread.upgrade().map(|t|t.session.lock().unwrap().clone()).unwrap_or_default();if !turn.is_empty(){self.codex_server()?.request("turn/interrupt",json!({"threadId":sid,"turnId":turn}))?;}},_=>{self.emit_event(&r,json!({"type":"turn.end","text":"","isError":false}));self.stop_run(&r);}}}for t in self.children(id){self.stop_tree(&t)}Ok(json!(true))},
   "agent:closeThread"=>{self.close_thread(p.as_str().unwrap_or(""));Ok(Value::Null)},
   "desk:release"=>{if let Ok(r)=self.active(p.as_str().unwrap_or("")){if !r.running.load(Ordering::Acquire){self.stop_run(&r);return Ok(json!(true))}}Ok(json!(false))},
   "agent:contextUsage"=>{let Ok(r)=self.active(p.as_str().unwrap_or(""))else{return Ok(Value::Null)};if r.provider=="codex"{return Ok(r.codex.lock().unwrap().context.clone())}if r.provider!="claude"{return Ok(Value::Null)}let c=self.ensure(&r)?;let mut u=c.control(json!({"subtype":"get_context_usage","detail":"summary"}))?;if let Some(categories)=u["categories"].as_array(){u["categories"]=json!(categories.iter().filter(|c|c["kind"]=="used"&&c["tokens"].as_u64().unwrap_or(0)>0).collect::<Vec<_>>());}Ok(u)},
@@ -2566,6 +2622,7 @@ mod lifecycle_tests {
     }
 }
 fn policy(mode: &str, cfg: &Value) -> Value {
+    if roles_agent::read_only(cfg){return json!({"approvalPolicy":"never","sandbox":"read-only","sandboxPolicy":{"type":"readOnly","networkAccess":false}})}
     let full = json!({"type":"dangerFullAccess"});
     let sandboxed = true;
     let read = if sandboxed {

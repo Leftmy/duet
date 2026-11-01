@@ -285,7 +285,7 @@ impl Agents {
         let cursor = self.team_record(t, recorded);
         let root = self.family_root(t);
         if let Some(sub) = &t.sub {
-            if own_end && event["contextCheckpoint"]!=true {
+            if own_end && event["contextCheckpoint"]!=true&&event["waitingAgents"]!=true {
                 if let Some(parent) = self.find(&sub.parent) {
                     self.team_background(&parent, sub, false);
                 }
@@ -335,7 +335,7 @@ impl Agents {
                     json!({"threadId":root.id,"ev":{"type":"tool.sub","id":sub.tool,"name":event["name"],"input":event["input"]}}),
                 );
             }
-            if own_end && event["stopped"] != true && event["contextCheckpoint"]!=true {
+            if own_end && event["stopped"] != true && event["contextCheckpoint"]!=true&&event["waitingAgents"]!=true {
                 self.notify_completion(t, cursor);
             }
         } else if !t.hidden {
@@ -376,7 +376,7 @@ impl Agents {
             );
         }
     }
-    fn notify_completion(&self, t: &Arc<Thread>, cursor: Option<u64>) {
+    pub(super) fn notify_completion(&self, t: &Arc<Thread>, cursor: Option<u64>) {
         let root = self.family_root(t);
         if let Some(sub) = &t.sub {
             if sub.notify.swap(false, Ordering::AcqRel) {
@@ -536,6 +536,9 @@ impl Agents {
         }).is_err(){t.delivering.store(false,Ordering::Release);}
     }
     pub(super) fn stop_tree(&self, t: &Arc<Thread>) {
+        t.mailbox_paused.store(true,Ordering::Release);
+        if let Some(sub)=&t.sub{sub.notify.store(false,Ordering::Release);}
+        self.dispatch_cancel(t);
         self.context_cancel(t);
         t.mailbox_paused.store(true, Ordering::Release);
         for child in self.children(&t.id) {
@@ -566,6 +569,8 @@ impl Agents {
             };
             self.stop_run(&run);
         }
+        self.dispatch.lock().unwrap().active.remove(&t.id);
+        self.dispatch_pump();
         self.collaboration.wake();
     }
     fn wait_team(
@@ -576,6 +581,9 @@ impl Agents {
         token: &AtomicBool,
     ) -> CoreResult {
         let start = Instant::now();
+        if targets.iter().any(|t|self.dispatch.lock().unwrap().queued(&t.id)){
+            return Ok(answer(json!({"status":"queued","agents":targets.iter().map(|t|json!({"run_id":t.id,"status":if self.dispatch.lock().unwrap().queued(&t.id){"queued"}else{state(t)}})).collect::<Vec<_>>(),"next":"Finish this turn to free your dispatch slot. The child starts automatically and completion wakes its parent; do not poll repeatedly."}),false));
+        }
         let sequences: Vec<_> = targets
             .iter()
             .map(|t| t.turn_sequence.load(Ordering::Acquire))
@@ -702,6 +710,7 @@ impl Agents {
                     leaf.clone()
                 };
                 let mut cfg = t.config.lock().unwrap().clone();
+                if let Some(map)=cfg.as_object_mut(){map.retain(|key,_|!key.starts_with('_')&&!matches!(key.as_str(),"resume"|"contextHistory"|"contextCompressor"|"contextOwner"));}
                 cfg["model"] = json!(args["model"]
                     .as_str()
                     .filter(|m| !m.is_empty())
@@ -711,7 +720,15 @@ impl Agents {
                     cfg["serviceTier"] = Value::Null;
                 }
                 cfg["oneshot"] = json!(false);
-                cfg["instructions"]=json!(format!("You are a delegated agent in Duet. Your run_id is {id}; parent is {}; root is {}. Work on the assigned task. Use message_agent(run_id=parent|root|a teammate run_id) to send progress, questions or handoffs; busy recipients queue messages. list_agents lists your team. agent_events provides every event with replay cursors. Do not wait for an ancestor that is waiting for your answer.",t.id,root.id));
+                let role=if args["read_only"]==true{"reviewer"}else{args["role"].as_str().unwrap_or(if args["read_only"]==false{"executor"}else{"reviewer"})};
+                if !["executor","reviewer","researcher"].contains(&role){return Err("Unknown delegated role".into())}
+                if role=="executor"{
+                    if super::roles_agent::read_only(&t.config.lock().unwrap()){return Err("Read-only agents cannot grant write access".into())}
+                    if args["workspace"]!="isolated"{return Err("Executor helpers require workspace=isolated, or transfer the shared executor role after its current turn".into())}
+                    cfg["_isolatedBase"]=cfg["cwd"].clone();cfg["dirs"]=json!([]);
+                }else{cfg["permissionMode"]=json!("plan");}
+                cfg["role"]=json!(role);
+                cfg["instructions"]=json!(format!("You are a delegated agent in Duet. Your role is {role}; reviewer and researcher roles are read-only. Your run_id is {id}; parent is {}; root is {}. Work on the assigned task. Use message_agent(run_id=parent|root|a teammate run_id) to send progress, questions or handoffs; busy recipients queue messages. list_agents lists your team. agent_events provides every event with replay cursors. Do not wait for an ancestor that is waiting for your answer.",t.id,root.id));
                 if args["read_only"] == true {
                     cfg["permissionMode"] = json!("plan");
                 }
@@ -759,7 +776,7 @@ impl Agents {
                     threads.insert(id.clone(), child.clone());
                 }
                 drop(admission);
-                self.emit_event(run,json!({"type":"agent","id":leaf,"runId":id,"parentId":t.sub.as_ref().map(|s|&s.tool),"name":task.lines().next().unwrap_or("").chars().take(80).collect::<String>(),"prompt":task,"provider":provider,"model":cfg["model"],"background":args["background"]==true}));
+                self.emit_event(run,json!({"type":"agent","id":leaf,"runId":id,"parentId":t.sub.as_ref().map(|s|&s.tool),"name":task.lines().next().unwrap_or("").chars().take(80).collect::<String>(),"prompt":task,"provider":provider,"role":cfg["role"],"cwd":cfg["_isolatedBase"].is_string().then_some(Value::Null).unwrap_or(cfg["cwd"].clone()),"model":cfg["model"],"background":args["background"]==true}));
                 cfg["threadId"] = json!(id);
                 cfg["provider"] = json!(provider);
                 cfg["text"] = json!(task);
@@ -770,9 +787,10 @@ impl Agents {
                     self.close_thread(&id);
                     return Err(error);
                 }
-                if args["background"] == true {
+                if args["background"] == true || self.dispatch.lock().unwrap().queued(&id) {
+                    child.sub.as_ref().unwrap().notify.store(true,Ordering::Release);
                     return Ok(answer(
-                        json!({"run_id":id,"status":"running","cursor":t.event_cursor.load(Ordering::Acquire),"latest_cursor":self.collaboration.cursor(&root.id)}),
+                        json!({"run_id":id,"status":if self.dispatch.lock().unwrap().queued(&id){"queued"}else{"running"},"next":"Completion wakes the parent. Finish the current turn to release capacity when the child is queued.","cursor":t.event_cursor.load(Ordering::Acquire),"latest_cursor":self.collaboration.cursor(&root.id)}),
                         false,
                     ));
                 }
@@ -821,7 +839,7 @@ impl Agents {
                 ))
             }
             "list_agents" => Ok(answer(
-                json!({"self":t.id,"root":root.id,"cursor":t.event_cursor.load(Ordering::Acquire),"latest_cursor":self.collaboration.cursor(&root.id),"agents":self.family(&t).iter().map(|t|json!({"run_id":t.id,"parent_id":t.sub.as_ref().map(|s|&s.parent),"agent_id":t.sub.as_ref().map(|s|&s.tool),"provider":*t.provider.lock().unwrap(),"status":state(t),"queued_messages":t.inbox.lock().unwrap().len()})).collect::<Vec<_>>()}),
+                json!({"self":t.id,"root":root.id,"cursor":t.event_cursor.load(Ordering::Acquire),"latest_cursor":self.collaboration.cursor(&root.id),"agents":self.family(&t).iter().map(|t|json!({"run_id":t.id,"parent_id":t.sub.as_ref().map(|s|&s.parent),"agent_id":t.sub.as_ref().map(|s|&s.tool),"provider":*t.provider.lock().unwrap(),"status":if self.dispatch.lock().unwrap().queued(&t.id){"queued"}else{state(t)},"role":t.config.lock().unwrap()["role"].as_str().unwrap_or("executor"),"cwd":t.config.lock().unwrap()["cwd"],"queued_messages":t.inbox.lock().unwrap().len()})).collect::<Vec<_>>()}),
                 false,
             )),
             "wait_agent" => {

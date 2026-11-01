@@ -9,6 +9,7 @@ import { testCodexUI } from './native-codex-ui.mjs';
 import { testPasteUI } from './native-paste-ui.mjs';
 import { testContextUI } from './native-context-ui.mjs';
 import { testResizeUI } from './native-resize-ui.mjs';
+import { testWorkbenchUI } from './native-workbench-ui.mjs';
 import { testTeamUI } from './native-team-ui.mjs';
 import { testSteeringUI } from './native-steering-ui.mjs';
 import { testBrowserUI } from './native-browser-ui.mjs';
@@ -174,6 +175,7 @@ try{
   await testBrowserUI(evaluate,browserURL,profile,async()=>{const shot=await rpc('Page.captureScreenshot',{format:'png'});if(shot.result?.data){fs.writeFileSync(path.join(profile,'browser-tabs-sleep.png'),Buffer.from(shot.result.data,'base64'));console.log('Browser tab screenshot:',path.join(profile,'browser-tabs-sleep.png'));}});
   await testCodexUI(evaluate,profile);
   await testResizeUI(evaluate,rpc,profile);
+  if(cliFixtures)await testWorkbenchUI(evaluate,profile);
   await testPasteUI(evaluate,profile);
   if(cliFixtures)await testContextUI(evaluate,profile,cliFixtures.root,testBinary);
   await testTeamUI(evaluate);

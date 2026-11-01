@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "duet-native"
-version = "0.2.8"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "cairo-rs",

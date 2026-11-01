@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createNativeFixtures} from './native-fixtures.mjs';
@@ -13,7 +13,9 @@ fs.writeFileSync(path.join(root,'data/settings.json'),JSON.stringify({ui:{autoTi
 const page=path.join(root,'native-test-page.html');
 fs.writeFileSync(page,'<title>Duet Linux browser fixture</title><body style="background:#225588;color:white"><h1>NATIVE_LINUX_BROWSER_OK</h1></body>');
 const script=path.join(root,'linux-ui-test.js');
-fs.writeFileSync(script,fs.readFileSync(path.join(repo,'scripts/native-linux-ui.js'),'utf8').replace("'__DUET_NATIVE_LINUX_PAGE__'",JSON.stringify(pathToFileURL(page).href)));
+const gitRoot=path.join(root,'git-fixture'),workspaces=[path.join(root,'left'),path.join(root,'right')];fs.mkdirSync(gitRoot);
+const git=(...args)=>execFileSync('git',args,{cwd:gitRoot,encoding:'utf8',stdio:['ignore','pipe','pipe']});git('init');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');fs.writeFileSync(path.join(gitRoot,'conflict.txt'),'base\n');git('add','.');git('commit','-m','base');for(let i=0;i<2;i++){git('worktree','add','-b','side-'+i,workspaces[i]);fs.writeFileSync(path.join(workspaces[i],'conflict.txt'),'side '+i+'\n');}
+fs.writeFileSync(script,fs.readFileSync(path.join(repo,'scripts/native-linux-ui.js'),'utf8').replace("'__DUET_NATIVE_LINUX_PAGE__'",JSON.stringify(pathToFileURL(page).href)).replace("'__DUET_NATIVE_LINUX_WORKSPACES__'",JSON.stringify(workspaces)));
 const binary=path.join(process.env.CARGO_TARGET_DIR||path.join(repo,'src-tauri/target'),'debug/duet-native');
 const child=spawn(binary,[],{env:{...env,DUET_NATIVE_TEST:'1',DUET_NATIVE_TEST_VISIBLE:'1',DUET_NATIVE_PREVIEW:'1',DUET_NATIVE_PROJECT_ROOT:repo,DUET_NATIVE_USER_DATA:path.join(root,'data'),DUET_NATIVE_TEST_TRANSCRIPTS:path.join(root,'home/.claude/projects'),DUET_NATIVE_TEST_SCRIPT:script,WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS:'1',WEBKIT_DISABLE_DMABUF_RENDERER:'1',LIBGL_ALWAYS_SOFTWARE:'1'},stdio:['ignore','pipe','pipe']});
 let errors='';child.stderr.on('data',b=>{errors=(errors+b).slice(-8000)});child.stdout.on('data',()=>{});

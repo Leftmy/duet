@@ -480,6 +480,7 @@ export const useStore = create<State>()((set, get) => {
         text,
         images,
         uuid,
+          ...(t.recoveryTicket?{_recoveryTicket:t.recoveryTicket}:{}),
         chrome: get().settings.chrome,
         ...(window.desk.nativeContext===true?{contextHistory}:{}),
         serviceTier: t.serviceTier,
@@ -602,7 +603,7 @@ export const useStore = create<State>()((set, get) => {
           persist({ subSessions: [ev.sessionId, ...get().settings.subSessions].slice(0, 1000) });
         }
         if(ev.type==='message.receipt'&&ev.status==='failed'&&!ev.agent)get().toast(tr('store.sendFailed',{error:ev.error??''}),'error');
-        if (ev.type === 'turn.end'&&!ev.agent&&!ev.contextCheckpoint) onResult(threadId);
+        if (ev.type === 'turn.end'&&!ev.agent&&!ev.contextCheckpoint&&!ev.waitingAgents) onResult(threadId);
         if (ev.type === 'task' && ev.op === 'end'&&!ev.agent) {
           const task = get().threads[threadId]?.tasks[ev.id];
           if (task?.background) {

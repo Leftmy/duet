@@ -200,6 +200,29 @@ button {
 
 /* ---------- sidebar ---------- */
 
+.workbench-toggle { position: relative; }
+.workbench-toggle>span { position:absolute; top:0; right:0; font-size:9px; line-height:14px; min-width:14px; border-radius:7px; background:var(--accent); color:#fff; }
+.workbench { width:min(1180px,94vw); height:min(760px,90vh); display:flex; flex-direction:column; padding:14px; gap:12px; overflow:hidden; }
+.workbench-head,.workbench-summary,.workbench-tabs,.workbench-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.workbench-head { flex:0 0 auto; }
+.workbench-summary { border-bottom:1px solid var(--border); padding-bottom:10px; font-size:12px; }
+.workbench-inbox { flex:1; min-height:0; display:flex; gap:16px; }
+.workbench-list { flex:0 0 30%; min-width:0; overflow:auto; }
+.workbench-detail { flex:1; min-width:0; overflow:auto; padding:4px; }
+.workbench-inbox-item { display:flex; flex-direction:column; gap:4px; width:100%; padding:10px; border:0; border-radius:6px; text-align:left; background:transparent; color:var(--text); cursor:pointer; overflow-wrap:anywhere; }
+.workbench-inbox-item>span { font-size:12px; color:var(--text-2); }
+.workbench-inbox-item:hover,.workbench-inbox-item.is-active { background:var(--bg-active); }
+.workbench-scroll { flex:1; min-height:0; overflow:auto; }
+.workbench-table { width:100%; border-collapse:collapse; font-size:12px; }
+.workbench-table td,.workbench-table th { padding:10px 8px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+.workbench-table th { color:var(--text-2); }
+.workbench-table select { max-width:170px; }
+.workbench-path { max-width:240px; overflow-wrap:anywhere; }
+.workbench-limit { display:flex; align-items:center; justify-content:space-between; gap:20px; max-width:650px; padding:10px 0; }
+.workbench-limit input { width:110px; }
+.workbench-conflict { padding:12px; margin:10px 0; border:1px solid var(--border-strong); border-radius:8px; }
+@media(max-width:700px){.workbench-inbox{flex-direction:column}.workbench-list{flex:0 0 30%}.workbench-summary{gap:8px}.workbench-path{min-width:130px}}
+
 .sidebar.is-collapsed, .changes.is-collapsed { width: 0; border: 0; }
 .resize-handle { flex: 0 0 6px; position: relative; z-index: 3; outline: none; touch-action: none; -webkit-app-region: no-drag; }
 .resize-x { cursor: col-resize; align-self: stretch; }

@@ -101,7 +101,7 @@ export function PermissionPicker({ thread }: { thread: Thread }) {
   const current = modes.find((m) => m.mode === thread.permissionMode) ?? modes[0];
   const Icon = PERM_ICONS[current.mode];
   const autoSupported = models.find((m) => m.value === thread.model)?.supportsAutoMode !== false;
-  const allowed = (mode: PermMode) => (!caps?.modes || caps.modes.includes(mode)) && (mode !== 'auto' || autoSupported);
+  const allowed = (mode: PermMode) => (!thread.role||thread.role==='executor'||mode==='plan') && (!caps?.modes || caps.modes.includes(mode)) && (mode !== 'auto' || autoSupported);
   return (
     <Popover
       open={open}

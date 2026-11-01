@@ -4,6 +4,10 @@ mod cli;
 mod codex;
 mod config;
 mod context;
+mod dispatch;
+mod queue_log;
+mod resources;
+mod workspaces;
 mod desktop;
 mod events;
 mod files;
@@ -115,6 +119,7 @@ pub const CHANNELS: &[&str] = &[
     "desk:skills",
     "desk:codex",
     "desk:context",
+    "desk:workbench",
     "desk:summarize",
     "desk:switch-provider",
     "desk:ui-error",
@@ -295,6 +300,7 @@ impl NativeCore {
                     core.desktop.check_watch(&item, path);
                 }
                 ticks += 1;
+                if ticks % 3 == 0 {core.agents.workbench_tick();}
                 if ticks % 15 == 0 {
                     core.desktop.maintain_browser();
                     core.agents.maintain();

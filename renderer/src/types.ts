@@ -138,6 +138,8 @@ export interface SteerItem {
 export type Item = TextItem | ThinkingItem | ToolItem | NoticeItem | AgentMessageItem | AgentEventItem | SteerItem;
 
 export interface AgentRun {
+  cwd?:string;
+  role?:'executor'|'reviewer'|'researcher';
   runId?: string;
   parentId?: string;
   id: string;
@@ -291,6 +293,9 @@ export interface WorktreeInfo {
 }
 
 export interface Thread {
+  recoveryTicket?:string;
+  role?:'executor'|'reviewer'|'researcher';
+  dispatch?: {phase:'queued'|'running'|'cancelled';reason:string};
   codex?: {goal?:import('./events').CodexGoal|null;diff?:string;title?:string;settings?:Record<string,any>;questions?:{id:string;items:{title:string;options:string[]|null}[]}|null};
   serviceTier?:string;
   /** Earlier parts of a conversation continued after context ran out (newest first) and how many are loaded. */

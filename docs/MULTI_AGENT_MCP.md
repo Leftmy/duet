@@ -1,7 +1,22 @@
-# Multi-agent MCP audit and implementation (0.2.2)
+# Multi-agent MCP audit and implementation
 
 The active implementation is native Rust: `agents.rs`, `collaboration.rs`,
 `rpc.rs` and `toolsets.rs`. Claude exposes it through its native CLI control transport; Codex exposes the same operations through app-server dynamic tools. The previous desktop adapter has been removed.
+
+## Scheduling and roles (0.3.0)
+
+Duet-managed turns share app, project, team and provider concurrency limits.
+Approval waits release compute capacity while retaining workspace write ownership.
+When delegation queues, the parent receives the run ID immediately and can finish
+a checkpoint; completion resumes the parent in its existing chat. Dispatch, role
+and workspace changes are included in the family event journal.
+
+Helpers default to the read-only reviewer role. Researchers have the same write
+restrictions. Writable helpers require `role: "executor", workspace: "isolated"`;
+their worktree is created after admission and is never merged automatically.
+Roles follow a logical chat across provider switches and saved session aliases.
+The Tasks and attention panel controls limits, ownership and queued input, and
+offers explicit draft recovery after a crash. See [task supervision](TASK_SUPERVISION.md).
 
 ## Weaknesses found and corrected
 
@@ -64,7 +79,7 @@ root UI rather than being silently discarded.
 
 | Tool | Behavior |
 | --- | --- |
-| `run_agent` | Same project, inherited permissions, optional read-only mode. Use `background: true` for an immediate run ID; otherwise wait briefly and receive status plus unread events. |
+| `run_agent` | Same project, reviewer by default; isolated workspace required for executor. Use `background: true` for an immediate run ID; otherwise wait briefly and receive status plus unread events. Capacity-queued runs return immediately. |
 | `message_agent` | Nonblocking queued message to `parent`, `root`, or another run ID in the same family. A finished/stopped recipient can resume; a busy one completes its active turn first. |
 | `list_agents` | Run IDs, parent relationships, providers, status and mailbox counts. |
 | `wait_agent` | One `run_id` or multiple `run_ids`; returns on any completed target or timeout, with unread events. Waiting for yourself or an ancestor is rejected. |

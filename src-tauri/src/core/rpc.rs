@@ -60,6 +60,7 @@ pub fn line(reader: &mut impl BufRead, cap: usize) -> Result<Option<Vec<u8>>, St
     }
 }
 impl Client {
+    pub fn pid(&self)->Option<u32>{self.child.lock().unwrap().as_ref().map(|c|c.id())}
     pub fn spawn(
         program: &Program,
         args: &[String],

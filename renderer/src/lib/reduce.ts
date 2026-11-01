@@ -165,6 +165,8 @@ function applyAgent(agents: Record<string, AgentRun>, ev: Extract<DeskEvent, { t
     ...(ev.agentType ? { type: ev.agentType } : {}),
     ...(ev.model ? { model: ev.model } : {}),
     ...(ev.provider ? { provider: ev.provider } : {}),
+    ...(ev.cwd?{cwd:ev.cwd}:{}),
+    ...(ev.role?{role:ev.role}:{}),
     ...(ev.background != null ? { background: ev.background } : {}),
     ...(ev.progress ? { progress: ev.progress } : {}),
     ...(ev.toolUses != null ? { toolUses: ev.toolUses } : {}),
@@ -351,6 +353,8 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
   }
   if (ev.type === 'session') return ev.sessionId === t0.sessionId ? t0 : { ...t0, sessionId: ev.sessionId, ...(ev.contextReplacement?{context:undefined}:{}) };
   if (ev.type === 'context') return { ...t0, context: ev.usage };
+  if (ev.type === 'role') return {...t0,role:ev.role,permissionMode:ev.role==='executor'?(t0.role&&t0.role!=='executor'?'default':t0.permissionMode):'plan'};
+  if (ev.type === 'dispatch') return {...t0,dispatch:{phase:ev.phase,reason:ev.reason},status:ev.phase==='cancelled'?'idle':'running',activity:ev.phase==='queued'?tr('workbench.queueReason.'+ev.reason):undefined};
   if(ev.type==='codex.state')return {...t0,codex:{...t0.codex,...ev.state},...(ev.state.title?{title:ev.state.title}:{})};
   if (ev.type === 'status') return {
     ...t0,
@@ -368,6 +372,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
 
   switch (ev.type) {
     case 'step':
+      t.dispatch=undefined;
       if(!historical)t.status='running';
       t.activity = undefined;
       // The agent can start a turn on its own (e.g. reacting to a finished background task).
@@ -439,8 +444,9 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
         if (ev.isError && !t.stopRequested) turn.error = (ev.error || tr('common.error')).slice(0, 600);
         turn.items = turn.items.map((x) => (x.kind === 'tool' && x.status === 'running' ? { ...x, status: 'error' as const, endedAt: now } : x));
       }
-      t.status = ev.contextCheckpoint ? 'running' : 'idle';
-      t.activity = ev.contextCheckpoint ? tr('reduce.compacting') : undefined;
+      t.status = ev.contextCheckpoint||ev.waitingAgents ? 'running' : 'idle';
+      t.dispatch=undefined;
+      t.activity = ev.contextCheckpoint ? tr('reduce.compacting') : ev.waitingAgents?tr('workbench.waitingAgents'):undefined;
       t.stopRequested = false;
       break;
     }

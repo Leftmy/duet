@@ -6,6 +6,7 @@ import type { ProviderId } from './types';
 import { t, useLang } from './i18n';
 import { Sidebar } from './components/Sidebar';
 import { ResizeHandle } from './components/ResizeHandle';
+import { WorkbenchButton } from './components/Workbench';
 import { ThreadView } from './components/ThreadView';
 import { spring } from './components/Popover';
 import { ConfirmDialog, RewindDialog } from './components/Dialogs';
@@ -183,6 +184,7 @@ export function App() {
           <PanelLeft size={15} />
         </button>
         <span className="titlebar-name">Duet</span>
+        <WorkbenchButton/>
       </div>
       <div className="body">
         <aside ref={sidebarRef} className={`sidebar ${sidebarOpen ? '' : 'is-collapsed'}`}>

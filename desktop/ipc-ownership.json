@@ -348,6 +348,11 @@
       "rustModule": "core/desktop.rs"
     },
     {
+      "channel": "desk:workbench",
+      "owner": "rust",
+      "rustModule": "core/dispatch.rs"
+    },
+    {
       "channel": "files:list",
       "owner": "rust",
       "rustModule": "core/files.rs"

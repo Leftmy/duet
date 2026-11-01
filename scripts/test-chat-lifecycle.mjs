@@ -39,6 +39,11 @@ try {
   const { chatRows } = await vite.ssrLoadModule('/src/lib/chat-sessions.ts');
   const { buildHandoff } = await vite.ssrLoadModule('/src/lib/handoff.ts');
   const { fromHistory, applyEvent } = await vite.ssrLoadModule('/src/lib/reduce.ts');
+  const executor = { entries: [], role: 'executor', permissionMode: 'bypassPermissions' };
+  assert.equal(applyEvent(executor, { type: 'role', role: 'executor' }).permissionMode, 'bypassPermissions');
+  const reviewer = applyEvent(executor, { type: 'role', role: 'reviewer' });
+  assert.equal(reviewer.permissionMode, 'plan');
+  assert.equal(applyEvent(reviewer, { type: 'role', role: 'executor' }).permissionMode, 'default');
   const wait = async (condition) => {
     for (let i = 0; i < 100; i++) {
       if (condition()) return;

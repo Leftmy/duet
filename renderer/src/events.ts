@@ -9,6 +9,8 @@ export type ProviderId = 'claude' | 'codex' | 'antigravity' | 'gemini';
 export type NoticeAt = 'open' | 'feed' | 'if-open';
 
 export type DeskEvent = { timestamp?: number; agent?: string } & (
+  | {type:'role';role:'executor'|'reviewer'|'researcher'}
+  | {type:'dispatch';phase:'queued'|'running'|'cancelled';reason:string}
   | {type:'message.receipt';id:string;status:'accepted'|'consumed'|'failed'|'cancelled';error?:string}
   | { type:'codex.state'; state:{goal?:CodexGoal|null;diff?:string;title?:string;settings?:Record<string,any>;questions?:{id:string;items:{title:string;options:string[]|null}[]}|null} }
   /** The provider's session id (first event of a run, and again after a resume). */
@@ -48,6 +50,8 @@ export type DeskEvent = { timestamp?: number; agent?: string } & (
       agentType?: string;
       model?: string;
       provider?: ProviderId;
+      cwd?:string;
+      role?:'executor'|'reviewer'|'researcher';
       background?: boolean;
       status?: AgentRun['status'];
       result?: string;
@@ -64,7 +68,7 @@ export type DeskEvent = { timestamp?: number; agent?: string } & (
   | { type: 'agent.mark'; id: string; status: AgentRun['status'] }
   /** The tool call never became an agent (rejected input). */
   | { type: 'agent.drop'; id: string }
-  | { type: 'turn.end'; durationMs?: number; isError?: boolean; error?: string; text?: string; costUsd?: number; contextCheckpoint?: boolean }
+  | { type: 'turn.end'; durationMs?: number; isError?: boolean; error?: string; text?: string; costUsd?: number; contextCheckpoint?: boolean; waitingAgents?:boolean }
   | { type: 'limits'; provider?: ProviderId; session?: LimitWindow; weekly?: LimitWindow; rejected?: boolean }
   /** Live context-window occupancy, for providers that report it with the stream. */
   | { type: 'context'; usage: ContextUsage });

@@ -549,7 +549,7 @@ impl Agents {
         }
         Ok(result)
     }
-    fn context_native_busy(&self, t: &Arc<Thread>, run: &Arc<Run>) -> bool {
+    pub(super) fn context_native_busy(&self, t: &Arc<Thread>, run: &Arc<Run>) -> bool {
         let tools: HashSet<String> = self
             .children(&t.id)
             .iter()
