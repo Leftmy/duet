@@ -738,10 +738,10 @@ impl Agents {
             if !s(&cfg, "instructions").is_empty() {
                 params["developerInstructions"] = cfg["instructions"].clone()
             }
+            if roles_agent::read_only(&cfg){let mut config=self.context_codex_config(&c)?;config["features"]["shell_tool"]=json!(true);params["config"]=config;}
             let result = if resume.is_empty() {
                 let tools=if cfg["contextCompressor"]==true{Vec::new()}else{toolsets::all(t.sub.as_ref().map(|s|s.depth).unwrap_or(0)).into_iter().flat_map(|set|arr(&set["tools"]).iter().map(|tool|json!({"namespace":set["name"],"name":tool["name"],"description":tool["description"],"inputSchema":tool["inputSchema"]})).collect::<Vec<_>>()).collect::<Vec<_>>()};
                 params["dynamicTools"] = json!(tools);
-                if roles_agent::read_only(&cfg){let mut config=self.context_codex_config(&c)?;config["features"]["shell_tool"]=json!(true);params["config"]=config;}
                 if cfg["contextCompressor"]==true {params["ephemeral"]=json!(true);params["sandbox"]=json!("read-only");params["approvalPolicy"]=json!("never");params["config"]=self.context_codex_config(&c)?;}
                 c.request("thread/start", params)?
             } else {

@@ -41,7 +41,7 @@ try{
  for(const provider of ['codex','antigravity']){
   const id='readonly-'+provider;at=events.length;await send(id,provider,'INITIAL');await event(id,'turn.end',at);await idle(id);await api('role',{threadId:id,role:'reviewer'});
   at=events.length;await send(id,provider,'approve',{permissionMode:'bypassPermissions'});const result=await event(id,'turn.end',at);assert.ok(!events.slice(at).some(e=>e.event==='agent:permission'));
-  if(provider==='codex'){assert.match(result.payload.ev.text,/decline/);const trace=fs.readFileSync(path.join(root,'codex-launch-trace.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.ok(trace.some(x=>x.method==='thread/resume'&&x.params.sandbox==='read-only'));}
+  if(provider==='codex'){assert.match(result.payload.ev.text,/decline/);const trace=fs.readFileSync(path.join(root,'codex-launch-trace.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.ok(trace.some(x=>x.method==='thread/resume'&&x.params.sandbox==='read-only'&&x.params.config?.apps?._default?.enabled===false&&x.params.config?.features?.multi_agent===false&&x.params.config?.features?.apply_patch_freeform===false));}
   else {const trace=fs.readFileSync(path.join(root,'context-inputs.jsonl'),'utf8').trim().split('\n').map(JSON.parse).filter(x=>x.provider===provider).at(-1);assert.ok(trace.args.includes('--settings'));assert.match(trace.args.join(' '),/write_file\(\*\)/);}
   await close(id);
  }
