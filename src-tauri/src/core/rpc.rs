@@ -1,12 +1,12 @@
 //! Bounded JSON-lines transport for native CLI protocols. Reader never waits for a user approval.
 use super::{
     process::{ProcessJob, Program},
-    wire_json,
+    rpc_frame::Frame,
 };
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
-    io::{BufRead, BufReader, Read, Write},
+    io::{BufReader, Read, Write},
     path::Path,
     process::{Child, ChildStdin, Stdio},
     sync::{
@@ -30,33 +30,6 @@ fn key(v: &Value) -> String {
         s.into()
     } else {
         v.to_string()
-    }
-}
-pub fn line(reader: &mut impl BufRead, cap: usize) -> Result<Option<Vec<u8>>, String> {
-    let mut out = Vec::new();
-    loop {
-        let buf = reader.fill_buf().map_err(|e| e.to_string())?;
-        if buf.is_empty() {
-            return if out.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(out))
-            };
-        }
-        let n = buf
-            .iter()
-            .position(|b| *b == b'\n')
-            .map(|i| i + 1)
-            .unwrap_or(buf.len());
-        if out.len() + n > cap {
-            return Err(format!("CLI frame exceeds {cap} bytes"));
-        }
-        out.extend_from_slice(&buf[..n]);
-        let done = buf[n - 1] == b'\n';
-        reader.consume(n);
-        if done {
-            return Ok(Some(out));
-        }
     }
 }
 impl Client {
@@ -99,29 +72,31 @@ impl Client {
         std::thread::spawn(move || {
             let mut reader = BufReader::new(out);
             let failure = loop {
-                match line(&mut reader, 32 * 1024 * 1024) {
-                    Ok(Some(line)) => {
+                match Frame::read(&mut reader) {
+                    Ok(Some(mut frame)) => {
                         let Some(c) = weak.upgrade() else {
                             break "CLI owner closed".into();
                         };
-                        if let Ok(msg) = wire_json::parse(&line) {
+                        let parsed=frame.parse();
+                        drop(frame);
+                        if let Ok(mut msg) = parsed {
                             let response = if msg["type"] == "control_response" {
                                 Some((
-                                    &msg["response"]["request_id"],
+                                    msg["response"]["request_id"].clone(),
                                     if msg["response"]["subtype"] == "error" {
                                         Err(msg["response"]["error"]
                                             .as_str()
                                             .unwrap_or("CLI request failed")
                                             .to_owned())
                                     } else {
-                                        Ok(msg["response"]["response"].clone())
+                                        Ok(msg["response"]["response"].take())
                                     },
                                 ))
                             } else if !msg["id"].is_null() && msg["method"].is_null() {
                                 Some((
-                                    &msg["id"],
+                                    msg["id"].clone(),
                                     if msg["error"].is_null() {
-                                        Ok(msg["result"].clone())
+                                        Ok(msg["result"].take())
                                     } else {
                                         Err(msg["error"]["message"]
                                             .as_str()
@@ -133,7 +108,7 @@ impl Client {
                                 None
                             };
                             if let Some((id, result)) = response {
-                                if let Some(tx) = c.pending.lock().unwrap().remove(&key(id)) {
+                                if let Some(tx) = c.pending.lock().unwrap().remove(&key(&id)) {
                                     let _ = tx.send(result);
                                 }
                             } else {

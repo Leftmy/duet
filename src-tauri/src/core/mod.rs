@@ -19,6 +19,7 @@ mod pr;
 mod process;
 mod project_index;
 mod rpc;
+mod rpc_frame;
 mod scheduler;
 mod search;
 mod stats;

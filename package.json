@@ -1,7 +1,7 @@
 {
   "name": "duet",
   "productName": "Duet",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Desktop UI for coding agents",
   "homepage": "https://github.com/alhimikix/duet",
   "license": "MIT",
