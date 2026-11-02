@@ -22,8 +22,14 @@ try{
  assert.ok(!events.some(e=>e.payload?.threadId==='held'&&e.payload.ev?.type==='turn.end'),'Queued other chats must not block steering');
  await event('next','turn.end');assert.ok(!events.some(e=>e.payload?.threadId==='cancelled'&&e.payload.ev?.type==='session'));await close('held');await close('cancelled');await close('next');
  console.log('PASS shared provider capacity, no process before admission, cancellation and active-turn steering');
+ await api('limits',{limits:{total:4,project:4,team:4,provider:4,memoryMb:0}});
+ await send('shared-a','claude','STEER_HOLD');await event('shared-a','step');await send('shared-b','codex','STEER_HOLD');await event('shared-b','step');
+ const parallel=await api('inspect');assert.equal(parallel.active,2);assert.equal(parallel.queued,0);for(const id of ['shared-a','shared-b'])assert.equal(parallel.tasks.find(t=>t.id===id).role,'executor');
+ await event('shared-a','turn.end');await event('shared-b','turn.end');await close('shared-a');await close('shared-b');await api('limits',{limits:{total:1,project:1,team:1,provider:1,memoryMb:0}});
+ console.log('PASS Claude and Codex executors run concurrently in the same folder');
+
  await send('permission','claude','approve');const approval=await wait(e=>e.event==='agent:permission'&&e.payload.threadId==='permission');
- fs.mkdirSync(path.join(root,'other-project'),{recursive:true});await send('other','codex','STEER_HOLD',{cwd:path.join(root,'other-project')});await event('other','step');assert.equal((await api('inspect')).active,1,'Approval waits release capacity');
+ await send('other','codex','STEER_HOLD');await event('other','step');assert.equal((await api('inspect')).active,1,'Approval waits release capacity');
  await call('agent:respondPermission',{threadId:'permission',reqId:approval.payload.reqId,decision:'allow'});await event('other','turn.end');await event('permission','turn.end');await close('permission');await close('other');
  console.log('PASS approval wait releases capacity and the answered turn resumes with a reserved slot');
  const rootId='one-slot-team';await send(rootId,'claude','TEAM '+JSON.stringify({name:'run_agent',args:{agent:'codex',task:'TEAM_CHILD_TO_ROOT'}}));
@@ -46,6 +52,15 @@ try{
   await close(id);
  }
  console.log('PASS native Codex sandbox and Antigravity CLI permissions enforce reviewer roles');
+ await api('limits',{limits:{total:4,project:4,team:4,provider:4,memoryMb:0}});
+ const sharedRoot='shared-writer-parent';at=events.length;await send(sharedRoot,'claude','TEAM '+JSON.stringify({name:'run_agent',args:{agent:'codex',role:'executor',task:'TEAM_HOLD',background:true}}));
+ const sharedEvent=await wait(e=>events.indexOf(e)>=at&&e.payload?.threadId===sharedRoot&&e.payload.ev?.type==='agent'&&e.payload.ev.runId);const sharedChild=sharedEvent.payload.ev.runId;await event(sharedRoot,'turn.end',at);await idle(sharedRoot);
+ let shared=(await api('inspect')).tasks.find(t=>t.id===sharedChild);assert.equal(shared.role,'executor');assert.equal(path.resolve(shared.cwd),path.resolve(root));assert.equal(shared.working,true);assert.ok(!shared.queued);
+ await api('role',{threadId:sharedRoot,role:'reviewer'});await api('role',{threadId:sharedRoot,role:'executor'});shared=(await api('inspect')).tasks.find(t=>t.id===sharedChild);assert.equal(shared.role,'executor');assert.equal(shared.working,true,'Changing the parent role cannot stop or demote a shared writer');
+ const sharedAt=events.length;await send(sharedRoot,'claude','STEER_HOLD');await event(sharedRoot,'step',sharedAt);const sharedRunning=await api('inspect');assert.equal(sharedRunning.active,2);assert.equal(sharedRunning.tasks.find(t=>t.id===sharedRoot).role,'executor');
+ await wait(e=>e.payload?.threadId===sharedRoot&&e.payload.ev?.type==='agent'&&e.payload.ev.runId===sharedChild&&e.payload.ev.status==='done');await close(sharedRoot);await api('limits',{limits:{total:1,project:1,team:1,provider:1,memoryMb:0}});
+ console.log('PASS writable delegation shares the folder without a worktree and role changes leave other writers running');
+
  const repository=path.join(root,'isolated-repo');fs.mkdirSync(repository);const git=(...args)=>execFileSync('git',args,{cwd:repository,windowsHide:true,encoding:'utf8',stdio:['ignore','pipe','pipe']});git('init');git('config','core.autocrlf','false');git('config','user.name','Fixture');git('config','user.email','fixture@example.invalid');fs.writeFileSync(path.join(repository,'source.txt'),'ORIGINAL\n');git('add','.');git('commit','-m','base');
  const writer='writer-parent';at=events.length;await send(writer,'claude','TEAM '+JSON.stringify({name:'run_agent',args:{agent:'codex',role:'executor',workspace:'isolated',task:'TEAM_HOLD',background:true}}),{cwd:repository});
  const writerEvent=await wait(e=>events.indexOf(e)>=at&&e.payload?.threadId===writer&&e.payload.ev?.type==='agent'&&e.payload.ev.runId);const writerId=writerEvent.payload.ev.runId;

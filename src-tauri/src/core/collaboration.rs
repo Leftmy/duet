@@ -724,8 +724,7 @@ impl Agents {
                 if !["executor","reviewer","researcher"].contains(&role){return Err("Unknown delegated role".into())}
                 if role=="executor"{
                     if super::roles_agent::read_only(&t.config.lock().unwrap()){return Err("Read-only agents cannot grant write access".into())}
-                    if args["workspace"]!="isolated"{return Err("Executor helpers require workspace=isolated, or transfer the shared executor role after its current turn".into())}
-                    cfg["_isolatedBase"]=cfg["cwd"].clone();cfg["dirs"]=json!([]);
+                    if args["workspace"]=="isolated"{cfg["_isolatedBase"]=cfg["cwd"].clone();cfg["dirs"]=json!([]);}
                 }else{cfg["permissionMode"]=json!("plan");}
                 cfg["role"]=json!(role);
                 cfg["instructions"]=json!(format!("You are a delegated agent in Duet. Your role is {role}; reviewer and researcher roles are read-only. Your run_id is {id}; parent is {}; root is {}. Work on the assigned task. Use message_agent(run_id=parent|root|a teammate run_id) to send progress, questions or handoffs; busy recipients queue messages. list_agents lists your team. agent_events provides every event with replay cursors. Do not wait for an ancestor that is waiting for your answer.",t.id,root.id));

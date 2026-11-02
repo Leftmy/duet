@@ -31,7 +31,7 @@ impl Agents {
         )
     }
     pub(super) fn dispatch_control(&self, t: &Arc<Thread>, provider: &str) -> Result<(), String> {
-        let _ownership = self.team_admission.lock().unwrap();
+        let _admission = self.team_admission.lock().unwrap();
         let cwd = t.config.lock().unwrap()["cwd"].clone();
         let lease = self.dispatch_lease(t, &json!({"provider":provider,"cwd":cwd}));
         let limits = Limits::read(&self.storage.ui());
@@ -91,17 +91,12 @@ impl Agents {
             .or_else(|| cfg["cwd"].as_str().filter(|s| !s.is_empty()))
             .map(str::to_owned)
             .unwrap_or_else(|| self.storage.home.to_string_lossy().into_owned());
-        let (project, mut workspace) = crate::core::workspaces::identity(Path::new(&cwd));
-        if cfg["_isolatedBase"].is_string() {
-            workspace = format!("isolated:{}", t.id);
-        }
+        let (project, _) = crate::core::workspaces::identity(Path::new(&cwd));
         Lease {
             id: t.id.clone(),
             project,
             team: self.family_root(t).id.clone(),
             provider: p["provider"].as_str().unwrap_or("claude").into(),
-            workspace,
-            writer: !t.hidden && !super::roles_agent::read_only(&cfg),
         }
     }
     pub(super) fn dispatch_event(&self, t: &Arc<Thread>, phase: &str, reason: &str) {
@@ -121,7 +116,7 @@ impl Agents {
         );
     }
     pub(super) fn dispatch_admit(&self, t: &Arc<Thread>, p: &Value) -> Result<bool, String> {
-        let _ownership = self.team_admission.lock().unwrap();
+        let _admission = self.team_admission.lock().unwrap();
         if self.closing.load(Ordering::Acquire) {
             return Err("Application is closing".into());
         }

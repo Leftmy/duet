@@ -7,8 +7,6 @@ pub struct Lease {
     pub project: String,
     pub team: String,
     pub provider: String,
-    pub workspace: String,
-    pub writer: bool,
 }
 pub struct Pending {
     pub lease: Lease,
@@ -71,16 +69,6 @@ impl Dispatcher {
         if self.active.contains_key(&lease.id) {
             return Some("turn");
         }
-        if lease.writer
-            && self
-                .active
-                .values()
-                .chain(self.waiting.values())
-                .chain(self.resumes.iter())
-                .any(|x| x.writer && x.workspace == lease.workspace && x.id != lease.id)
-        {
-            return Some("workspace");
-        }
         if self.active.len() >= limits.total {
             return Some("total");
         }
@@ -139,8 +127,6 @@ mod tests {
             project: p.into(),
             team: t.into(),
             provider: "claude".into(),
-            workspace: id.into(),
-            writer: true,
         }
     }
     #[test]
@@ -184,7 +170,7 @@ mod tests {
         assert_eq!(q.active.len(), 1);
     }
     #[test]
-    fn an_approval_wait_keeps_workspace_ownership_but_releases_compute_capacity() {
+    fn approval_waits_release_capacity_and_do_not_block_the_same_project() {
         let mut q = Dispatcher::default();
         let l = Limits {
             total: 4,
@@ -194,12 +180,13 @@ mod tests {
             memory_mb: 0,
         };
         let a = lease("a", "p", "t");
-        let mut b = lease("b", "p", "t");
-        b.workspace = a.workspace.clone();
+        let b = lease("b", "p", "t");
         q.waiting.insert(a.id.clone(), a.clone());
-        assert_eq!(q.capacity(&b, l), Some("workspace"));
-        b.writer = false;
         assert!(q.capacity(&b, l).is_none());
         assert!(q.capacity(&a, l).is_none());
+        q.waiting.clear();
+        q.active.insert(a.id.clone(), a);
+        assert!(q.capacity(&b, l).is_none());
+        assert_eq!(q.capacity(&b, Limits { total: 1, ..l }), Some("total"));
     }
 }

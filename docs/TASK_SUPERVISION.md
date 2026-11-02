@@ -4,7 +4,7 @@ The titlebar bell opens **Tasks and attention**: a unified inbox for approvals, 
 
 ## Workload and recovery
 
-Claude, Codex and Antigravity share one Rust turn dispatcher. Default concurrent turns: four in the app, three per Git project, four per team, four per provider. Worktrees share a project identity. One executor holds write ownership of each workspace, including while awaiting approval; read-only agents can run alongside it. Approval waits release compute capacity, and answered requests receive priority to resume.
+Claude, Codex and Antigravity share one Rust turn dispatcher. Default concurrent turns: four in the app, three per Git project, four per team, four per provider. Worktrees share a project identity. Multiple executors can work in the same folder concurrently. Approval waits release compute capacity without reserving the folder, and answered requests receive priority to resume.
 
 New idle-chat input queues before launching a CLI when a limit is reached. Existing-turn steering retains its independent transport. Requests are FIFO among those whose constraints fit, allowing another project to proceed. Queue pause affects future starts; current turns and answered approvals can finish. Changing limits never interrupts running work.
 
@@ -22,8 +22,8 @@ An optional RAM threshold pauses new admissions and releases eligible idle provi
 
 - **Executor:** writes according to the chosen provider permissions.
 - **Reviewer / Researcher:** read-only. Claude receives an explicit read/search tool set and strict MCP configuration. Codex uses a read-only sandbox with external apps/MCP disabled. Antigravity receives deny rules for writes, commands and external MCP. Native write/elevation approvals are rejected. Dynamic browser interactions are restricted to inspection. The permission picker cannot upgrade a role.
-- Shared helpers default to Reviewer. The task table transfers executor ownership only when affected agents are idle; the previous shared executor becomes a reviewer. Only their provider clients restart, retaining sessions and children. Roles are stored locally for known sessions.
-- Writable delegation uses `run_agent` with `role: "executor", workspace: "isolated"`. A registered worktree is created after admission, starting from the source HEAD. Uncommitted parent changes are not copied. Finishing never applies, merges or removes it automatically. Read-only agents cannot grant writable delegation.
+- Shared helpers default to Reviewer. The task table changes the selected idle agent’s role independently. Other agents keep their roles and continue running. Only the selected provider client restarts, retaining its session and children. Roles are stored locally for known sessions.
+- Writable delegation uses `run_agent` with `role: "executor"` in the shared folder by default. Optional `workspace: "isolated"` creates a registered worktree after admission, starting from the source HEAD. Uncommitted parent changes are not copied. Finishing never applies, merges or removes it automatically. Read-only agents cannot grant writable delegation.
 
 ## Conflict preview
 
@@ -35,4 +35,4 @@ Unchanged snapshots and merge pairs are cached. Bounds: ten seconds, 32 candidat
 
 `npm run test:workbench` drives actual Rust transports through isolated CLI fixtures: cross-provider admission, no CLI before admission, cancellation, steering, approval capacity release/resumption, one-slot delegation, provider role restrictions, isolated executors and crash recovery. It consumes no real subscription calls.
 
-Rust tests cover fairness, workspace ownership during approval waits, resource thresholds and real-Git preservation of staged/untracked work. Native Windows UI tests approve requests across chats, change roles, cancel queued input and preview conflicts. Linux tests exercise the panel, resource metrics and real conflict previews inside WebKitGTK.
+Rust tests cover fairness, concurrent admission during approval waits, resource thresholds and real-Git preservation of staged/untracked work. Native Windows UI tests approve requests across chats, change roles, cancel queued input and preview conflicts. Linux tests exercise the panel, resource metrics and real conflict previews inside WebKitGTK.

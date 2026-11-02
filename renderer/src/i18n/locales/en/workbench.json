@@ -49,6 +49,5 @@
   "recovery": "Unsent messages",
   "recoveryHint": "Queued input survives a crash or restart. Restore opens a draft; send it when you are ready.",
   "restoreDraft": "Restore draft",
-  "queueReason.turn": "Waiting for the previous turn",
-  "queueReason.workspace": "Waiting for the workspace writer"
+  "queueReason.turn": "Waiting for the previous turn"
 }

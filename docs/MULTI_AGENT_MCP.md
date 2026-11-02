@@ -6,16 +6,16 @@ The active implementation is native Rust: `agents.rs`, `collaboration.rs`,
 ## Scheduling and roles (0.3.0)
 
 Duet-managed turns share app, project, team and provider concurrency limits.
-Approval waits release compute capacity while retaining workspace write ownership.
+Approval waits release compute capacity. Multiple executors can use the same folder concurrently.
 When delegation queues, the parent receives the run ID immediately and can finish
 a checkpoint; completion resumes the parent in its existing chat. Dispatch, role
 and workspace changes are included in the family event journal.
 
 Helpers default to the read-only reviewer role. Researchers have the same write
-restrictions. Writable helpers require `role: "executor", workspace: "isolated"`;
-their worktree is created after admission and is never merged automatically.
+restrictions. Writable helpers use `role: "executor"` in the shared folder by default.
+Optional `workspace: "isolated"` creates a worktree after admission, without automatic merging.
 Roles follow a logical chat across provider switches and saved session aliases.
-The Tasks and attention panel controls limits, ownership and queued input, and
+The Tasks and attention panel controls limits, roles and queued input, and
 offers explicit draft recovery after a crash. See [task supervision](TASK_SUPERVISION.md).
 
 ## Weaknesses found and corrected
@@ -79,7 +79,7 @@ root UI rather than being silently discarded.
 
 | Tool | Behavior |
 | --- | --- |
-| `run_agent` | Same project, reviewer by default; isolated workspace required for executor. Use `background: true` for an immediate run ID; otherwise wait briefly and receive status plus unread events. Capacity-queued runs return immediately. |
+| `run_agent` | Same project, reviewer by default; executor supports shared or optional isolated workspace. Use `background: true` for an immediate run ID; otherwise wait briefly and receive status plus unread events. Capacity-queued runs return immediately. |
 | `message_agent` | Nonblocking queued message to `parent`, `root`, or another run ID in the same family. A finished/stopped recipient can resume; a busy one completes its active turn first. |
 | `list_agents` | Run IDs, parent relationships, providers, status and mailbox counts. |
 | `wait_agent` | One `run_id` or multiple `run_ids`; returns on any completed target or timeout, with unread events. Waiting for yourself or an ancestor is rejected. |
