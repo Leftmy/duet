@@ -187,7 +187,7 @@ function MiniBar({
   return (
     <span className="mini-bar" title={!showReset && w.resetsAt ? t('sidebar.resets', { time: resetTime(w.resetsAt) }) : undefined}>
       <span className="mini-bar-row">
-        <span>{label}</span>
+        <span>{raw?.label==='Month'?t('kimi.monthly'):raw?.label??label}</span>
         <span>{Math.round(w.pct)}%</span>
       </span>
       <span className="usage-track">
