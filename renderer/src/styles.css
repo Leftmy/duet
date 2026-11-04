@@ -4073,3 +4073,5 @@ body.dragging-chat .project-row:not(.is-drop) {
 .browser:has(.browser-tabbar) .browser-progress { top:76px; }
 
 .agent-mark img { display:block; width:100%; height:100%; object-fit:contain; }
+
+.kimi-controls{max-height:min(76vh,720px);overflow:auto}.kimi-account{display:flex;flex-direction:column;gap:8px;margin:8px 0}.kimi-json{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;font-size:11px}.kimi-controls .input{min-width:0;width:100%}

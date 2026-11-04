@@ -9,6 +9,7 @@ import { useStore } from '../store';
 import { ALL_EFFORTS, EFFORT_LABEL, PERM_MODES, modelLabel, resetTime } from '../lib/format';
 import type { Effort, LimitWindow, PermMode, ThemePref, ProviderId } from '../types';
 import type { ProviderProbe } from '../desk';
+import { KimiAccount } from './KimiControls';
 import { AgentMark } from './AgentMark';
 import { spring } from './Popover';
 import { LANGS, t, type Lang } from '../i18n';
@@ -303,6 +304,7 @@ export function SettingsModal() {
                             <h2 className="agent-h2">
                               <AgentMark provider={id} size={18} /> {p.label}
                             </h2>
+                            {id==='kimi'&&<KimiAccount/>}
                             {p.available ? (
                               <>
                                 <Row title={t('settings.account')}>

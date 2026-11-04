@@ -3,12 +3,13 @@
 // the renderer folds them into entries (lib/reduce.ts). Keep this contract and the native translator fixtures in sync.
 import type { AgentRun, BgTask, ContextUsage, ImageAttachment, LimitWindow, PermMode } from './types';
 
-export type ProviderId = 'claude' | 'codex' | 'antigravity' | 'gemini';
+export type ProviderId = 'claude' | 'codex' | 'antigravity' | 'kimi' | 'gemini';
 
 /** Where a notice goes: 'open' starts a turn if none is open, 'feed' joins the open or the last turn, 'if-open' only an open turn. */
 export type NoticeAt = 'open' | 'feed' | 'if-open';
 
 export type DeskEvent = { timestamp?: number; agent?: string } & (
+  | {type:'kimi.state';state:{goal?:any;settings?:Record<string,any>}}
   | {type:'role';role:'executor'|'reviewer'|'researcher'}
   | {type:'dispatch';phase:'queued'|'running'|'cancelled';reason:string}
   | {type:'message.receipt';id:string;status:'accepted'|'consumed'|'failed'|'cancelled';error?:string}

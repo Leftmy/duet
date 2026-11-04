@@ -8,7 +8,7 @@ if (!location.hash.startsWith('#detached=')) (async () => {
     const info=await window.desk.call('desk:native-core');
     assert(info.legacyNodeCore===false&&info.remainingNodeChannels.length===0,'all commands are native Rust');
     const providers=Object.values(window.__deskStore.getState().providers);
-    assert(providers.length===3&&providers.every(p=>p.available),'three enabled CLI fixtures initialize through the UI');
+    assert(providers.length===4&&providers.every(p=>p.available),'four enabled CLI fixtures initialize through the UI');
     await wait(()=>document.querySelector('[data-resize="sidebar"]'));
     const sidebarBefore=document.querySelector('.sidebar').getBoundingClientRect().width;
     document.querySelector('[data-resize="sidebar"]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
@@ -70,6 +70,7 @@ if (!location.hash.startsWith('#detached=')) (async () => {
     await wait(()=>document.querySelector('.workbench-conflict')?.textContent.includes('conflict.txt'));
     assert(true,'native Linux task panel renders actual Git conflict previews');
     document.querySelector('[data-workbench] button[aria-label="Close"]').click();for(const id of workbenchIds)await window.desk.closeThread(id);
+    store.setState({activeId:''});const kimiId=store.getState().newThread('/tmp');store.getState().switchProvider(kimiId,'kimi');await store.getState().send(kimiId,'LINUX_KIMI_UI',[]);await wait(()=>store.getState().threads[kimiId]?.status==='idle'&&store.getState().threads[kimiId]?.entries.some(e=>e.kind==='turn'&&e.items.some(i=>i.kind==='text'&&i.text.includes('LINUX_KIMI_UI'))));assert(true,'native Linux Kimi streaming');document.querySelector('button[aria-label="Kimi Code"]').click();await wait(()=>document.querySelector('[data-kimi-controls]'));document.querySelector('[data-kimi-tab="skills"]').click();await wait(()=>document.querySelector('[data-kimi-controls]')?.textContent.includes('fixture-skill'));assert(true,'native Linux Kimi skill controls');await window.desk.closeThread(kimiId);
     const state=await window.__TAURI_INTERNALS__.invoke('window_control',{action:'state'});assert(typeof state.maximized==='boolean','native Linux window state');
     await window.desk.call('win:detach',{threadId:'linux-detached',title:'Linux detached fixture',cwd:'/tmp'});await wait(async()=>(await window.desk.call('win:list')).length===1);assert((await window.desk.call('win:list')).length===1,'native Linux detached window');
     assert(!document.querySelector('.ui-failure'),'React remains responsive after native services');report.ok=true;

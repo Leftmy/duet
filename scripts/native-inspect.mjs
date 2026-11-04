@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { testKimiUI } from './native-kimi-ui.mjs';
 import { testCodexUI } from './native-codex-ui.mjs';
 import { testPasteUI } from './native-paste-ui.mjs';
 import { testContextUI } from './native-context-ui.mjs';
@@ -114,8 +115,8 @@ try{
   await evaluate(`document.querySelector('[data-window-action="maximize"]').blur()`);
   console.log('PASS: maximize/restore, F11 full screen, external state changes and no stuck pointer focus');
   const providerAppearance=await evaluate(`({ids:[...document.querySelectorAll('.agents-usage .agent-mark')].map(x=>x.dataset.provider),icons:[...document.querySelectorAll('.agents-usage .agent-mark img')].map(x=>({loaded:x.complete&&x.naturalWidth>0,local:x.src.startsWith('data:')||new URL(x.src,location.href).origin===location.origin}))})`);
-  assert.deepEqual(providerAppearance.ids,['claude','codex','antigravity']);assert.equal(providerAppearance.icons.length,3);assert.ok(providerAppearance.icons.every(x=>x.loaded&&x.local),'Provider icons must be bundled and decoded: '+JSON.stringify(providerAppearance));
-  console.log('PASS: Claude / Codex / Antigravity order, bundled real logos and no Gemini');
+  assert.deepEqual(providerAppearance.ids,['claude','codex','antigravity','kimi']);assert.equal(providerAppearance.icons.length,4);assert.ok(providerAppearance.icons.every(x=>x.loaded&&x.local),'Provider icons must be bundled and decoded: '+JSON.stringify(providerAppearance));
+  console.log('PASS: Claude / Codex / Antigravity / Kimi order, bundled real logos and no Gemini');
   const usageLayout=await evaluate(`(()=>{const block=document.querySelector('.agents-usage');return {height:block?.getBoundingClientRect().height,rows:[...document.querySelectorAll('.agent-usage')].map(row=>({height:row.getBoundingClientRect().height,head:row.querySelector('.agent-usage-head').getBoundingClientRect().right,bars:[...row.querySelectorAll('.mini-bar')].map(bar=>bar.getBoundingClientRect().left)}))}})()`);
   assert.ok(usageLayout.height<=usageLayout.rows.length*36,'Account limit block must remain compact: '+JSON.stringify(usageLayout));
   assert.ok(usageLayout.rows.every(row=>row.height<=34&&row.bars[0]>=row.head),'Account labels must not overlap limit columns');
@@ -174,6 +175,7 @@ try{
   console.log('PASS: heavy panels load on demand; settings and file editor open correctly');
   await testBrowserUI(evaluate,browserURL,profile,async()=>{const shot=await rpc('Page.captureScreenshot',{format:'png'});if(shot.result?.data){fs.writeFileSync(path.join(profile,'browser-tabs-sleep.png'),Buffer.from(shot.result.data,'base64'));console.log('Browser tab screenshot:',path.join(profile,'browser-tabs-sleep.png'));}});
   await testCodexUI(evaluate,profile);
+    await testKimiUI(evaluate,profile);
   await testResizeUI(evaluate,rpc,profile);
   if(cliFixtures)await testWorkbenchUI(evaluate,profile);
   await testPasteUI(evaluate,profile);

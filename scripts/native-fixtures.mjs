@@ -127,9 +127,12 @@ for await(const line of createInterface({input:process.stdin})){let m;try{m=JSON
 `;
 export function createNativeFixtures(){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'duet-rust-core-'));fs.mkdirSync(path.join(root,'home'),{recursive:true});fs.mkdirSync(path.join(root,'data'),{recursive:true});
-const env={...process.env,DUET_DRIVER_EVENTS:'1',CLAUDE_CONFIG_DIR:path.join(root,'home','.claude'),CODEX_HOME:path.join(root,'home','.codex')};
+const env={...process.env,KIMI_CODE_HOME:path.join(root,'kimi-home'),DUET_DRIVER_EVENTS:'1',CLAUDE_CONFIG_DIR:path.join(root,'home','.claude'),CODEX_HOME:path.join(root,'home','.codex')};
 for(const id of ['claude','codex','antigravity','gemini']){const file=path.join(root,'fake-'+id+'.mjs');fs.writeFileSync(file,fake);fs.chmodSync(file,0o755);let bin=file;if(process.platform==='win32'&&id!=='gemini'){bin=path.join(root,'fake-'+id+'.cmd');fs.writeFileSync(bin,`@echo off\r\n"${process.execPath}" "%dp0%\\fake-${id}.mjs" %*\r\n`)}env['DUET_'+id.toUpperCase()+'_BIN']=bin;}
+const kimiSource=fs.readFileSync(new URL('./fixture-kimi.mjs',import.meta.url),'utf8').replace("from 'ws'",'from '+JSON.stringify(new URL('../node_modules/ws/wrapper.mjs',import.meta.url).href));
+const kimiFile=path.join(root,'fake-kimi.mjs');fs.writeFileSync(kimiFile,kimiSource);fs.chmodSync(kimiFile,0o755);
+let kimiBin=kimiFile;if(process.platform==='win32'){kimiBin=path.join(root,'fake-kimi.cmd');fs.writeFileSync(kimiBin,`@echo off\r\n"${process.execPath}" "%dp0%\\fake-kimi.mjs" %*\r\n`);}env.DUET_KIMI_BIN=kimiBin;
 // A CLI must never accidentally inherit a billable API credential from the desktop shell.
-for(const key of ['ANTHROPIC_API_KEY','OPENAI_API_KEY','CODEX_API_KEY','GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_APPLICATION_CREDENTIALS'])env[key]='fixture-must-be-removed';
+for(const key of ['ANTHROPIC_API_KEY','OPENAI_API_KEY','CODEX_API_KEY','GEMINI_API_KEY','GOOGLE_API_KEY','GOOGLE_APPLICATION_CREDENTIALS','KIMI_API_KEY','MOONSHOT_API_KEY','KIMI_MODEL_API_KEY'])env[key]='fixture-must-be-removed';
 return {root,env};
 }

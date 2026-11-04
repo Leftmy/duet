@@ -5,7 +5,7 @@
 # Duet
 
 **One desktop app for all your coding agents.**
-Claude Code, Codex and Antigravity in one window. Switch agents mid-chat without losing context,
+Claude Code, Codex, Antigravity and Kimi Code in one window. Switch agents mid-chat without losing context,
 and let them hand work to each other.
 
 ![Windows](https://img.shields.io/badge/Windows-x64-0078D4?logo=windows&logoColor=white)
@@ -20,7 +20,7 @@ and let them hand work to each other.
 
 Duet is a desktop UI for coding agents. It doesn't ship its own model or ask for API keys. It drives the
 agent CLIs that are already **installed and signed in on your machine**, so every chat runs on your own
-subscriptions and limits.
+subscriptions and limits. Claude Code and Kimi Code executables are included; sign in with your subscription.
 
 What sets it apart from a single-agent client:
 
@@ -43,17 +43,20 @@ What sets it apart from a single-agent client:
 |---|---|---|---|---|
 | **Claude Code** | native Claude CLI, streaming stdio | bundled with Duet, sign in once | ✅ | ✅ |
 | **Codex** | `codex app-server` (JSON-RPC) | `npm i -g @openai/codex` or the Codex desktop app | ✅ | ✅ |
+| **Kimi Code** | owned local Kimi v2 server, HTTP + WebSocket | bundled native executable; device-code subscription sign-in | ✅ | ✅ |
 | **Antigravity** | `agy` CLI, headless | [Antigravity CLI](https://antigravity.google/docs/cli/headless) | CLI rules | — |
 
 Gemini is disabled as a provider. Existing Gemini journals remain readable; switch to an enabled
-provider to continue a legacy chat. All provider selectors use Claude → Codex → Antigravity order.
+provider to continue a legacy chat. All provider selectors use Claude → Codex → Antigravity → Kimi order.
 The provider icons are bundled SVG assets (see `renderer/src/assets/providers/README.md`).
 
 Duet finds the binaries on its own. You can override the paths with `DUET_CODEX_BIN`,
-`DUET_ANTIGRAVITY_BIN`. For Codex it picks the newest of the npm CLI, the
+`DUET_ANTIGRAVITY_BIN`, `DUET_KIMI_BIN`. For Codex it picks the newest of the npm CLI, the
 desktop app and `codex` on `PATH`.
 
 ## Features
+
+Kimi Code includes subscription login, streaming reasoning/tools, typed questions and plan approvals, native subagents, bidirectional Duet MCP teams, hot switching, saved sessions, fork/undo, context editing and provider compaction. Header controls expose goals, Swarm/Tower, side conversations, skills, tasks, MCP OAuth, plugin management and file snapshots. See [Kimi integration](docs/KIMI_INTEGRATION.md).
 
 Codex has native review, compaction, goals, skill selection, scoped approvals, typed
 MCP forms and server/tool discovery in the chat header. Markdown file links open
@@ -69,7 +72,7 @@ in `diagnostics.log` under the app's user-data directory. A React recovery view 
 running chats and event subscriptions without restarting the core.
 
 The application runs a Rust core inside Tauri 2: WebView2 on Windows and WebKitGTK on Linux.
-All 124 application commands are handled in Rust, including providers, history, search, Git,
+All 125 application commands are handled in Rust, including providers, history, search, Git,
 terminals, schedules and Telegram. There is no persistent Node sidecar or JavaScript SDK adapter.
 The previous Electron implementation, Node bridge and JavaScript provider SDK have been removed.
 Idle agent sessions release their client processes after

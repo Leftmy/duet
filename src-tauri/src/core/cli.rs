@@ -6,13 +6,13 @@ use super::{
 };
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf, time::Duration};
-pub const IDS: [&str; 4] = ["claude", "codex", "antigravity", "gemini"];
-pub const ENABLED: [&str; 3] = ["claude", "codex", "antigravity"];
+pub const IDS: [&str; 5] = ["claude", "codex", "antigravity", "kimi", "gemini"];
+pub const ENABLED: [&str; 4] = ["claude", "codex", "antigravity", "kimi"];
 pub fn require_enabled(id: &str) -> Result<(), String> {
     if ENABLED.contains(&id) {
         Ok(())
     } else if id == "gemini" {
-        Err("Gemini is disabled. Select Claude, Codex or Antigravity.".into())
+        Err("Gemini is disabled. Select Claude, Codex, Antigravity or Kimi.".into())
     } else {
         Err("Unknown provider".into())
     }
@@ -22,11 +22,13 @@ pub fn label(id: &str) -> &str {
         "claude" => "Claude",
         "codex" => "Codex",
         "antigravity" => "Antigravity",
+        "kimi" => "Kimi",
         "gemini" => "Gemini",
         _ => id,
     }
 }
 pub fn caps(id: &str) -> Value {
+    if id=="kimi" {return json!({"steer":true,"interrupt":true,"images":true,"fork":true,"rollback":"turns","rewindFiles":false,"subagents":true,"backgroundTasks":true,"contextUsage":true,"slashCommands":true,"segments":false,"chrome":false,"deskTools":true,"mcpManagement":true,"interactiveApprovals":true,"modes":["default","auto","plan","bypassPermissions"]})}
     let claude = id == "claude";
     let codex = id == "codex";
     let google = !claude && !codex;
@@ -37,6 +39,7 @@ pub fn brand(id: &str) -> Value {
         "claude" => ("#D97757", "C"),
         "codex" => ("#10A37F", "X"),
         "antigravity" => ("#4285f4", "A"),
+        "kimi" => ("#ffffff", "K"),
         _ => ("#8e75ff", "G"),
     };
     json!({"color":color,"mark":mark})
@@ -61,6 +64,7 @@ pub fn find(st: &Storage, id: &str) -> Result<Program, String> {
     let env = match id {
         "claude" => "DUET_CLAUDE_BIN",
         "codex" => "DUET_CODEX_BIN",
+        "kimi" => "DUET_KIMI_BIN",
         "antigravity" => "DUET_ANTIGRAVITY_BIN",
         "gemini" => "DUET_GEMINI_BIN",
         _ => return Err(format!("Unknown provider {id}")),
@@ -136,6 +140,7 @@ pub fn find(st: &Storage, id: &str) -> Result<Program, String> {
             }
             candidates.push(st.home.join(".local/bin/agy"));
         }
+        "kimi" => {candidates.push(st.runtime.join("bin").join(exe("kimi")));candidates.push(super::kimi::home(st).join("bin").join(exe("kimi")));candidates.push(st.home.join(".local/bin").join(exe("kimi")));},
         "gemini" => {
             for root in node_roots(st) {
                 candidates.push(root.join("@google/gemini-cli/bundle/gemini.js"));
@@ -198,7 +203,7 @@ fn from_path(p: PathBuf) -> Result<Program, String> {
         .is_some_and(|e| e == "js" || e == "mjs" || e == "cjs")
     {
         let mut program = Program::new(
-            process::which("node").ok_or("Node is required by the installed Gemini CLI")?,
+            process::which("node").ok_or("Node is required by the installed provider CLI")?,
         );
         program.prefix.push(p.to_string_lossy().into());
         Ok(program)
@@ -226,6 +231,7 @@ pub fn subscription(st: &Storage, id: &str, mut program: Program) -> Result<Prog
             "CLAUDE_CODE_USE_FOUNDRY",
         ],
         "codex" => &["OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL"],
+        "kimi" => &["KIMI_API_KEY","MOONSHOT_API_KEY","KIMI_BASE_URL","KIMI_MODEL_NAME","KIMI_MODEL_PROVIDER","KIMI_MODEL_BASE_URL","KIMI_MODEL_API_KEY","KIMI_CODE_CUSTOM_HEADERS","ANTHROPIC_API_KEY","ANTHROPIC_BASE_URL","OPENAI_API_KEY","OPENAI_BASE_URL"],
         "gemini" => {
             let v = read(st.home.join(".gemini/settings.json"))?;
             for p in [
@@ -281,7 +287,7 @@ pub fn subscription(st: &Storage, id: &str, mut program: Program) -> Result<Prog
         _ => &[],
     };
     for (key, _) in std::env::vars() {
-        if blocked.iter().any(|b| b.eq_ignore_ascii_case(&key)) {
+        if blocked.iter().any(|b| b.eq_ignore_ascii_case(&key)) || (id=="kimi"&&key.to_uppercase().starts_with("KIMI_MODEL_")) {
             program.unset.push(key)
         }
     }

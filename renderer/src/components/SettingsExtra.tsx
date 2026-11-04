@@ -95,7 +95,7 @@ export function McpManager() {
         </button>
       </div>
       <AgentTabs value={agent} onChange={setAgent} />
-      <p className="muted small">{isClaude ? t('settings.mcpIntro') : t('settings.mcpIntroCodex')}</p>
+      <p className="muted small">{isClaude ? t('settings.mcpIntro') : agent==='kimi'?t('kimi.mcpIntro'):t('settings.mcpIntroCodex')}</p>
       {!rows ? (
         <div className="skeleton">
           {[80, 60, 70].map((w, i) => (

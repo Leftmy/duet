@@ -1,6 +1,8 @@
 //! Application services owned by Rust, independent of Tauri and of the temporary Node bridge.
 mod agents;
 mod cli;
+mod kimi;
+mod kimi_events;
 mod codex;
 mod config;
 mod context;
@@ -121,6 +123,7 @@ pub const CHANNELS: &[&str] = &[
     "desk:codex",
     "desk:context",
     "desk:workbench",
+    "desk:kimi",
     "desk:summarize",
     "desk:switch-provider",
     "desk:ui-error",
@@ -438,13 +441,13 @@ impl NativeCore {
                 arg(4),
             ),
             "agent:listSessions" => self.history.list(),
-            "agent:loadSession" => self.history.load(
+            "agent:loadSession" => {if arg(3)=="kimi"{self.agents.kimi_import(string(0)?)?;}self.history.load(
                 string(0)?,
                 arg(1).as_str(),
                 arg(2).as_i64(),
                 arg(3).as_str().unwrap_or("claude"),
                 None,
-            ),
+            )},
             "agent:loadSessionPage" => self.history.load(
                 string(0)?,
                 arg(1).as_str(),

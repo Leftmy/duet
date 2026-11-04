@@ -41,6 +41,7 @@ import { askConfirm } from '../lib/dialog';
 import { detachThread, isDetachedWindow } from '../features/detach/detach';
 import { t } from '../i18n';
 import { MarkdownContext } from './Markdown';
+import { KimiControls } from './KimiControls';
 import { CodexControls } from './CodexControls';
 
 const suggestions = () => [
@@ -179,6 +180,7 @@ function Header({ thread, changes, changesOpen, split }: { thread: Thread; chang
       )}
       <ChaptersMenu thread={thread} />
       {thread.cwd && <OpenIn cwd={thread.cwd} />}
+      {thread.provider==='kimi'&&<KimiControls thread={thread}/>}
       {thread.provider==='codex'&&window.desk.nativeHistoryPaging===true&&<CodexControls thread={thread}/>}
       {(['files', 'terminal'] as const).map((k) => (
         <button

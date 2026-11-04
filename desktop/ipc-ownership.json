@@ -308,6 +308,11 @@
       "rustModule": "core/history.rs"
     },
     {
+      "channel": "desk:kimi",
+      "owner": "rust",
+      "rustModule": "core/kimi_control.rs"
+    },
+    {
       "channel": "desk:native-core",
       "owner": "rust",
       "rustModule": "core/mod.rs"

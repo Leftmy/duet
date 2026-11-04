@@ -1,7 +1,7 @@
 {
   "name": "duet",
   "productName": "Duet",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Desktop UI for coding agents",
   "homepage": "https://github.com/alhimikix/duet",
   "license": "MIT",
@@ -24,7 +24,7 @@
     "test:agents": "node scripts/test-native-teams.mjs",
     "test:native": "node scripts/native-inspect.mjs",
     "test:native-ownership": "node scripts/check-native-ownership.mjs",
-    "test:rust-core": "node scripts/test-native-core.mjs && node scripts/test-native-history.mjs && node scripts/test-native-teams.mjs && node scripts/test-native-steering.mjs && node scripts/test-native-context.mjs && node scripts/test-native-workbench.mjs",
+    "test:rust-core": "node scripts/test-native-core.mjs && node scripts/test-native-history.mjs && node scripts/test-native-teams.mjs && node scripts/test-native-steering.mjs && node scripts/test-native-context.mjs && node scripts/test-native-workbench.mjs && node scripts/test-native-kimi.mjs",
     "test:native-linux": "node scripts/test-native-linux.mjs",
     "test:ui": "node scripts/test-ui-load.mjs",
     "icon": "node scripts/make-icon.mjs",
@@ -35,7 +35,9 @@
     "test:teams": "node scripts/test-native-teams.mjs",
     "test:steering": "node scripts/test-native-steering.mjs",
     "test:native-bridge": "node --test scripts/test-native-bridge.mjs",
-    "test:workbench": "node scripts/test-native-workbench.mjs"
+    "test:workbench": "node scripts/test-native-workbench.mjs",
+    "test:kimi": "node scripts/test-native-kimi.mjs",
+    "test:kimi-published": "node scripts/test-kimi-published.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -79,12 +81,13 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^7.0.2",
-    "vite": "^8.3.3"
+    "vite": "^8.3.3",
+    "ws": "^8.22.1"
   },
   "optionalDependencies": {
-    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.291",
     "@anthropic-ai/claude-agent-sdk-linux-arm64": "0.3.291",
-    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.291",
-    "@anthropic-ai/claude-agent-sdk-win32-arm64": "0.3.291"
+    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.291",
+    "@anthropic-ai/claude-agent-sdk-win32-arm64": "0.3.291",
+    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.291"
   }
 }

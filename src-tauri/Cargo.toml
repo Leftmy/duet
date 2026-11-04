@@ -1,6 +1,6 @@
 [package]
 name = "duet-native"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 
 [features]
@@ -29,6 +29,7 @@ encoding_rs = "0.8"
 portable-pty = "0.8.1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 toml = "0.8"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

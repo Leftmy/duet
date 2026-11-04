@@ -112,6 +112,8 @@ interface State {
   editorFiles: string[];
   editorActive: string | null;
   editorLocation?: {path:string;line?:number;column?:number;endLine?:number;seq:number};
+  kimiPanel?:{threadId:string;tab:string;seq:number};
+  kimiAction(id:string,action:string,params?:Record<string,any>):Promise<any>;
   codexPanel?:{threadId:string;tab:string;seq:number};
   review: Record<string, ReviewComment[]>;
   composerInsert: { seq: number; text: string } | null;
@@ -903,6 +905,20 @@ export const useStore = create<State>()((set, get) => {
       if (!t || t.loading || (!text.trim() && !images.length)) return;
       if (!providerEnabled(t.provider)) return get().toast(tr('store.providerDisabled'), 'error');
       if(t.provider==='codex'&&t.codex?.questions)update(id,x=>({...x,codex:{...x.codex,questions:null}}));
+      if(t.provider==='kimi'&&!images.length&&!t.draftTextFiles?.length){
+        const command=/^\/(status|help|login|compact|model|permissions|goal|swarm|tower|btw|tasks|agents|skills|mcp|plugins|hooks|new|clear|fork)(?:\s+([\s\S]*))?$/.exec(text.trim());
+        if(command){const name=command[1],argument=command[2]?.trim()??'';const panel=(tab:string)=>set({kimiPanel:{threadId:id,tab,seq:(get().kimiPanel?.seq??0)+1}});update(id,x=>({...x,draft:'',draftImages:[]}));
+          if(name==='new'||name==='clear'){const fresh=get().newThread(t.cwd);get().switchProvider(fresh,'kimi');return;}
+          if(name==='fork'){if(t.status==='running'){update(id,x=>({...x,draft:text}));return;}void get().forkFrom(id);return;}
+          if(name==='model'&&argument){get().setModel(id,argument);return;}
+          if(name==='permissions'&&['default','acceptEdits','auto','plan'].includes(argument)){get().setPermissionMode(id,argument as PermMode);return;}
+          if(name==='compact'){void get().kimiAction(id,'compact',argument?{instruction:argument}:{}).catch(()=>{});return;}
+          if(name==='btw'&&argument){void get().kimiAction(id,'btw',{text:argument}).catch(()=>{});panel('agents');return;}
+          if(name==='goal'&&argument){void get().kimiAction(id,['pause','resume','cancel'].includes(argument)?'goal/'+argument:'goal/set',{objective:argument}).catch(()=>{});panel('goal');return;}
+          if((name==='swarm'||name==='tower')&&['on','off'].includes(argument)){void get().kimiAction(id,name,{enabled:argument==='on'}).catch(()=>{});panel('status');return;}
+          panel(name==='login'?'account':['status','help','model','permissions','swarm','tower'].includes(name)?'status':name);return;
+        }
+      }
       if(t.provider==='codex'&&!images.length&&!t.draftTextFiles?.length){
         const command=/^\/(status|help|mcp|skills|goal|model|permissions|diff|new|clear|fork)(?:\s+([\s\S]*))?$/.exec(text.trim());
         if(command){
@@ -987,6 +1003,12 @@ export const useStore = create<State>()((set, get) => {
     },
 
     setServiceTier(id,tier){update(id,x=>({...x,serviceTier:tier}));window.desk.configure({threadId:id,serviceTier:tier}).catch(e=>get().toast(String(e),'error'));},
+    async kimiAction(id,action,params={}){
+      const thread=get().threads[id];if(!thread||thread.provider!=='kimi')return;
+      const generates=action==='compact'||action==='skills/activate';if(generates&&thread.status==='running')throw Error(tr('kimi.loading'));
+      if(generates)update(id,x=>({...x,status:'running',entries:[...x.entries,{kind:'turn',id:uid(),provider:'kimi',items:[],startedAt:Date.now(),done:false}]}));
+      try{return await window.desk.call('desk:kimi',{...params,action,threadId:id,sessionId:thread.sessionId,config:{cwd:thread.cwd,model:thread.model,effort:effortFor(thread),permissionMode:thread.permissionMode,role:thread.role}});}catch(error:any){if(generates)update(id,x=>applyEvent(x,{type:'turn.end',isError:true,error:String(error)}));get().toast(String(error),'error');throw error;}
+    },
     async codexAction(id,action,params={}){
       const thread=get().threads[id];if(!thread||thread.provider!=='codex')return;
       const generates=action==='review'||action==='compact';
@@ -1343,7 +1365,7 @@ export const useStore = create<State>()((set, get) => {
         if (mode === 'both' || mode === 'conversation') {
           const kept = t.entries.slice(0, idx);
           const dropped = t.entries.slice(idx);
-          const journalBacked = t.provider === 'antigravity' || t.provider === 'gemini';
+          const journalBacked = t.provider === 'antigravity' || t.provider === 'gemini' || t.provider === 'kimi';
           const byTurns = journalBacked || get().providers[t.provider]?.caps?.rollback === 'turns';
           // Agents that drop whole turns: count this agent's turns from the rewound message on.
           const dropTurns = dropped.filter((e) => e.kind === 'turn' && (e.provider ?? t.provider) === t.provider).length;
@@ -1361,7 +1383,7 @@ export const useStore = create<State>()((set, get) => {
             if (!sid || pId === t.provider) continue;
             const otherDropped = dropped.filter((e) => e.kind === 'turn' && (e.provider ?? t.provider) === pId).length;
             const otherKept = kept.some((e) => e.kind === 'turn' && (e.provider ?? t.provider) === pId);
-            const otherJournal = pId === 'antigravity' || pId === 'gemini';
+            const otherJournal = pId === 'antigravity' || pId === 'gemini' || pId === 'kimi';
             const otherByTurns = otherJournal || get().providers[pId]?.caps?.rollback === 'turns';
             if (otherDropped > 0) {
               if (otherByTurns) await window.desk.rewindConversation({ threadId: id, dropTurns: otherDropped, sessionId: sid, provider: pId });

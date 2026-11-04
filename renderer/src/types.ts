@@ -1,7 +1,7 @@
 import type { ProviderId } from './events';
 
 export type { ProviderId };
-export type Effort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+export type Effort = 'off' | 'on' | 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 export type PermMode = 'default' | 'acceptEdits' | 'auto' | 'bypassPermissions' | 'plan';
 export type ThemePref = 'system' | 'dark' | 'light';
 
@@ -305,6 +305,7 @@ export interface Thread {
   /** 'worktree' chats run in an isolated checkout; worktree is set once it exists. */
   workMode?: 'local' | 'worktree';
   worktree?: WorktreeInfo;
+  kimi?:{goal?:any;settings?:Record<string,any>};
   context?: ContextUsage;
   tasks: Record<string, BgTask>;
   agents: Record<string, AgentRun>;

@@ -7,6 +7,8 @@ mod context_agent;
 mod workbench_agent;
 #[path = "roles_agent.rs"]
 mod roles_agent;
+#[path = "kimi_agent.rs"]
+mod kimi_agent;
 use super::{
     cli, codex, context,
     events::{self, arr, s, HistoryState},
@@ -75,6 +77,7 @@ struct Run {
     claude: Mutex<live::Claude>,
     codex: Mutex<events::CodexTranslator>,
     google: Mutex<Option<live::Google>>,
+    kimi: Mutex<super::kimi_events::Translator>,
     patch_approvals: Mutex<HashMap<String, Value>>,
     source: String,
     requests: Mutex<HashMap<String, Arc<AtomicBool>>>,
@@ -106,6 +109,8 @@ pub struct Agents {
     pub host: Mutex<Option<Host>>,
     threads: Mutex<HashMap<String, Arc<Thread>>>,
     server: Mutex<Option<Arc<Client>>>,
+    kimi_backend: Mutex<Option<Arc<super::kimi::Backend>>>,
+    kimi_routes: Mutex<HashMap<String,Weak<Run>>>,
     routes: Mutex<HashMap<String, Weak<Run>>>,
     approvals: Mutex<HashMap<String, Approval>>,
     state: Mutex<Option<rusqlite::Connection>>,
@@ -136,6 +141,8 @@ impl Agents {
             host: Mutex::new(None),
             threads: Mutex::new(HashMap::new()),
             server: Mutex::new(None),
+            kimi_backend: Mutex::new(None),
+            kimi_routes: Mutex::new(HashMap::new()),
             routes: Mutex::new(HashMap::new()),
             approvals: Mutex::new(HashMap::new()),
             state: Mutex::new(None),
@@ -238,6 +245,7 @@ impl Agents {
             claude: Mutex::new(live::Claude::default()),
             codex: Mutex::new(events::CodexTranslator::default()),
             google: Mutex::new(None),
+            kimi: Mutex::new(super::kimi_events::Translator::default()),
             patch_approvals: Mutex::new(HashMap::new()),
             source: uuid::Uuid::new_v4().to_string(),
             requests: Mutex::new(HashMap::new()),
@@ -403,7 +411,7 @@ impl Agents {
             map.remove("_skipJournal");
         }
         if !skip_journal
-            && matches!(run.provider.as_str(), "antigravity" | "gemini")
+            && matches!(run.provider.as_str(), "antigravity" | "gemini" | "kimi")
             && ev["type"] != "session"
         {
             let sid = t.session.lock().unwrap().clone();
@@ -463,7 +471,8 @@ impl Agents {
         self.cancel(run, None);
         self.collaboration.wake();
         if let Some(c) = run.client.lock().unwrap().take() {
-            if run.provider != "codex" {
+            if run.provider == "kimi" {if let Some(t)=run.thread.upgrade(){let sid=t.session.lock().unwrap().clone();self.kimi_routes.lock().unwrap().remove(&sid);if let Some(b)=self.kimi_backend.lock().unwrap().as_ref(){b.release(&sid);}}}
+            else if run.provider != "codex" {
                 c.close()
             } else if let Some(t) = run.thread.upgrade() {
                 let sid = t.session.lock().unwrap().clone();
@@ -520,6 +529,7 @@ impl Agents {
     pub fn send(self: &Arc<Self>, payload: &Value) -> CoreResult {
         let id = s(payload, "threadId");
         if let Some(target) = payload["delegate"].as_str() {
+            if let Some(target)=target.strip_prefix("native:kimi:"){let (sid,agent)=target.rsplit_once(':').ok_or("Invalid Kimi agent")?;let t=self.find(id).ok_or("Chat is inactive")?;if *t.session.lock().unwrap()!=sid{return Err("Kimi agent belongs to another session".into())}self.kimi_action(&json!({"action":"native/message","threadId":id,"agentId":agent,"text":payload["text"]}))?;return Ok(json!(true))}
             let parent = self.find(id).ok_or("Chat is inactive")?;
             self.user_team_message(&parent, target, s(payload, "text"))?;
             return Ok(json!(true));
@@ -547,6 +557,7 @@ impl Agents {
         }else{None};
         let payload=effective.as_ref().unwrap_or(payload);
         if let Some(job_id)=payload["_contextJobId"].as_str(){let scope=t.context_scope.lock().unwrap().clone();if self.contexts.ready(&scope)?["id"]!=job_id{return Ok(json!(false))}}
+        if payload["provider"]=="kimi"&&!s(payload,"resume").is_empty(){self.kimi_import(s(payload,"resume"))?;}
         self.context_before_send(&t, payload)?;
         cli::require_enabled(payload["provider"].as_str().unwrap_or("claude"))?;
         if t.closed.load(Ordering::Acquire) {
@@ -718,6 +729,7 @@ impl Agents {
             .map(PathBuf::from)
             .unwrap_or(self.storage.home.clone());
         let resume = t.session.lock().unwrap().clone();
+        if run.provider == "kimi" {return self.kimi_ensure(run)}
         if run.provider == "codex" {
             let c = self.codex_server()?;
             let pol = policy(s(&cfg, "permissionMode"), &cfg);
@@ -878,7 +890,7 @@ impl Agents {
     fn send_now(self: &Arc<Self>, run: &Arc<Run>, msg: &Value) -> Result<(), String> {
         let c = self.ensure(run)?;
         if !Self::current(run) {
-            if run.provider!="codex"{c.close()}else if let Some(t)=run.thread.upgrade(){let sid=t.session.lock().unwrap().clone();if !sid.is_empty(){let _=c.send_request("thread/unsubscribe",json!({"threadId":sid}));}}
+            if !matches!(run.provider.as_str(),"codex"|"kimi"){c.close()}else if run.provider=="codex" {if let Some(t)=run.thread.upgrade(){let sid=t.session.lock().unwrap().clone();if !sid.is_empty(){let _=c.send_request("thread/unsubscribe",json!({"threadId":sid}));}}}
             return Err("Run closed before dispatch".into());
         }
         let t = run.thread.upgrade().ok_or("Chat closed")?;
@@ -895,6 +907,7 @@ impl Agents {
         }
         let msg = &actual;
         let result = match run.provider.as_str() {
+            "kimi" => self.kimi_send(run,msg,&cfg,&instructions),
             "claude" => {
                 let mut content = vec![];
                 if !sid.is_empty() {
@@ -1780,6 +1793,7 @@ impl Agents {
     pub fn usage(self: &Arc<Self>, provider: &str) -> CoreResult {
         cli::require_enabled(provider)?;
         match provider {
+            "kimi" => self.kimi_usage(),
             "codex" => {
                 let r = self
                     .codex_server()?
@@ -1922,6 +1936,7 @@ impl Agents {
                     json!({"available":true,"loggedIn":account["account"]["type"]=="chatgpt","account":{"email":account["account"]["email"],"subscriptionType":account["account"]["planType"]},"models":list,"commands":[{"name":"compact","description":"Compact context"},{"name":"review","description":"Review changes"},{"name":"status","description":"Chat status and controls"},{"name":"mcp","description":"MCP servers"},{"name":"skills","description":"Skills"},{"name":"goal","description":"Goal"},{"name":"model","description":"Select model"},{"name":"permissions","description":"Permissions"},{"name":"diff","description":"Changes"},{"name":"fork","description":"Fork conversation"},{"name":"new","description":"New Codex chat"},{"name":"help","description":"Codex controls"}],"usage":self.usage(id).unwrap_or(Value::Null)}),
                 )
             }
+            "kimi" => self.kimi_probe(),
             _ => cli::google_probe(&self.storage, id),
         }
     }
@@ -2021,6 +2036,7 @@ impl Agents {
     }
     pub fn shutdown(&self) {
         self.closing.store(true, Ordering::Release);
+        if let Some(backend)=self.kimi_backend.lock().unwrap().take(){backend.shutdown();}
         let ids = self
             .threads
             .lock()
@@ -2350,26 +2366,27 @@ impl Agents {
   "agent:respondPermission"=>{let mut pending=self.approvals.lock().unwrap();let id=s(p,"reqId");if pending.get(id).is_some_and(|a|a.thread==tid){if let Some(a)=pending.remove(id){let _=a.tx.send(p.clone());return Ok(json!(true))}}Ok(json!(false))},
   "desk:switch-provider"=>self.context_switch(p),
   "desk:workbench"=>self.workbench(p),
-  "agent:configure"=>{let Some(t)=self.find(tid)else{return Ok(json!(false))};if roles_agent::read_only(&t.config.lock().unwrap())&&p["permissionMode"].as_str().is_some_and(|m|m!="plan"){return Err("Change the agent role before enabling writes".into())}{let mut cfg=t.config.lock().unwrap();for k in["model","effort","permissionMode","serviceTier"]{if let Some(v)=p.get(k){cfg[k]=v.clone()}}}let r=t.run.lock().unwrap().clone();if let Some(r)=r{if r.provider=="claude"{let _lock=r.operation.lock().unwrap();let c=self.ensure(&r)?;for(key,subtype,field)in[("model","set_model","model"),("permissionMode","set_permission_mode","mode")]{if let Some(v)=p.get(key){c.control(json!({"subtype":subtype,field:v}))?;}}if let Some(effort)=p.get("effort"){c.control(json!({"subtype":"apply_flag_settings","settings":{"effortLevel":effort}}))?;}}}Ok(json!(true))},
-  "agent:interrupt"=>{let id=p.as_str().unwrap_or("");if let Some(t)=self.find(id){if self.dispatch_cancel(&t){for child in self.children(id){self.stop_tree(&child)}return Ok(json!(true))}}if self.context_interrupt_waiting(id){return Ok(json!(true))}if let Some(t)=self.find(id){self.context_cancel(&t);t.mailbox_paused.store(true,Ordering::Release);t.inbox.lock().unwrap().clear();}if let Ok(r)=self.active(id){self.cancel(&r,None);match r.provider.as_str(){"claude"=>{let c=r.client.lock().unwrap().clone();if let Some(c)=c{c.control(json!({"subtype":"interrupt","cancel_queued":true}))?;}},"codex"=>{let turn=r.codex.lock().unwrap().turn.clone().unwrap_or_default();let sid=r.thread.upgrade().map(|t|t.session.lock().unwrap().clone()).unwrap_or_default();if !turn.is_empty(){self.codex_server()?.request("turn/interrupt",json!({"threadId":sid,"turnId":turn}))?;}},_=>{self.emit_event(&r,json!({"type":"turn.end","text":"","isError":false}));self.stop_run(&r);}}}for t in self.children(id){self.stop_tree(&t)}Ok(json!(true))},
+  "desk:kimi"=>self.kimi_action(p),
+  "agent:configure"=>{if self.find(tid).is_some_and(|t|*t.provider.lock().unwrap()=="kimi"){return self.kimi_configure(p)}let Some(t)=self.find(tid)else{return Ok(json!(false))};if roles_agent::read_only(&t.config.lock().unwrap())&&p["permissionMode"].as_str().is_some_and(|m|m!="plan"){return Err("Change the agent role before enabling writes".into())}{let mut cfg=t.config.lock().unwrap();for k in["model","effort","permissionMode","serviceTier"]{if let Some(v)=p.get(k){cfg[k]=v.clone()}}}let r=t.run.lock().unwrap().clone();if let Some(r)=r{if r.provider=="claude"{let _lock=r.operation.lock().unwrap();let c=self.ensure(&r)?;for(key,subtype,field)in[("model","set_model","model"),("permissionMode","set_permission_mode","mode")]{if let Some(v)=p.get(key){c.control(json!({"subtype":subtype,field:v}))?;}}if let Some(effort)=p.get("effort"){c.control(json!({"subtype":"apply_flag_settings","settings":{"effortLevel":effort}}))?;}}}Ok(json!(true))},
+  "agent:interrupt"=>{let id=p.as_str().unwrap_or("");if let Some(t)=self.find(id){if self.dispatch_cancel(&t){for child in self.children(id){self.stop_tree(&child)}return Ok(json!(true))}}if self.context_interrupt_waiting(id){return Ok(json!(true))}if let Some(t)=self.find(id){self.context_cancel(&t);t.mailbox_paused.store(true,Ordering::Release);t.inbox.lock().unwrap().clear();}if let Ok(r)=self.active(id){self.cancel(&r,None);match r.provider.as_str(){"kimi"=>{let sid=r.thread.upgrade().map(|t|t.session.lock().unwrap().clone()).unwrap_or_default();self.kimi_backend()?.session(&sid,":abort",Some(&json!({})))?;},"claude"=>{let c=r.client.lock().unwrap().clone();if let Some(c)=c{c.control(json!({"subtype":"interrupt","cancel_queued":true}))?;}},"codex"=>{let turn=r.codex.lock().unwrap().turn.clone().unwrap_or_default();let sid=r.thread.upgrade().map(|t|t.session.lock().unwrap().clone()).unwrap_or_default();if !turn.is_empty(){self.codex_server()?.request("turn/interrupt",json!({"threadId":sid,"turnId":turn}))?;}},_=>{self.emit_event(&r,json!({"type":"turn.end","text":"","isError":false}));self.stop_run(&r);}}}for t in self.children(id){self.stop_tree(&t)}Ok(json!(true))},
   "agent:closeThread"=>{self.close_thread(p.as_str().unwrap_or(""));Ok(Value::Null)},
   "desk:release"=>{if let Ok(r)=self.active(p.as_str().unwrap_or("")){if !r.running.load(Ordering::Acquire){self.stop_run(&r);return Ok(json!(true))}}Ok(json!(false))},
-  "agent:contextUsage"=>{let Ok(r)=self.active(p.as_str().unwrap_or(""))else{return Ok(Value::Null)};if r.provider=="codex"{return Ok(r.codex.lock().unwrap().context.clone())}if r.provider!="claude"{return Ok(Value::Null)}let c=self.ensure(&r)?;let mut u=c.control(json!({"subtype":"get_context_usage","detail":"summary"}))?;if let Some(categories)=u["categories"].as_array(){u["categories"]=json!(categories.iter().filter(|c|c["kind"]=="used"&&c["tokens"].as_u64().unwrap_or(0)>0).collect::<Vec<_>>());}Ok(u)},
-  "agent:stopTask"|"agent:backgroundTask"=>{if ch=="agent:stopTask"&&self.stop_team_from_ui(p.as_str().unwrap_or(""),a(1).as_str().unwrap_or("")){return Ok(json!(true));}let r=self.active(p.as_str().unwrap_or(""))?;if r.provider!="claude"{return Err("Not supported by this agent".into())}let c=self.ensure(&r)?;let value=c.control(if ch=="agent:stopTask"{json!({"subtype":"stop_task","task_id":a(1)})}else{json!({"subtype":"background_tasks","tool_use_id":a(1)})})?;Ok(if ch=="agent:stopTask"{json!(true)}else{value.get("backgrounded").cloned().unwrap_or(json!(true))})},
+  "agent:contextUsage"=>{let Ok(r)=self.active(p.as_str().unwrap_or(""))else{return Ok(Value::Null)};if r.provider=="kimi"{return Ok(r.kimi.lock().unwrap().context.clone())}if r.provider=="codex"{return Ok(r.codex.lock().unwrap().context.clone())}if r.provider!="claude"{return Ok(Value::Null)}let c=self.ensure(&r)?;let mut u=c.control(json!({"subtype":"get_context_usage","detail":"summary"}))?;if let Some(categories)=u["categories"].as_array(){u["categories"]=json!(categories.iter().filter(|c|c["kind"]=="used"&&c["tokens"].as_u64().unwrap_or(0)>0).collect::<Vec<_>>());}Ok(u)},
+  "agent:stopTask"|"agent:backgroundTask"=>{if ch=="agent:stopTask"&&self.stop_team_from_ui(p.as_str().unwrap_or(""),a(1).as_str().unwrap_or("")){return Ok(json!(true));}let r=self.active(p.as_str().unwrap_or(""))?;if r.provider=="kimi"&&ch=="agent:stopTask"{let raw=a(1).as_str().unwrap_or("");let action=if raw.starts_with("native:kimi:"){"native/stop"}else{"task/stop"};let target=raw.rsplit(':').next().unwrap_or(raw);self.kimi_action(&json!({"threadId":p,"action":action,"agentId":target,"taskId":target}))?;return Ok(json!(true))}if r.provider!="claude"{return Err("Not supported by this agent".into())}let c=self.ensure(&r)?;let value=c.control(if ch=="agent:stopTask"{json!({"subtype":"stop_task","task_id":a(1)})}else{json!({"subtype":"background_tasks","tool_use_id":a(1)})})?;Ok(if ch=="agent:stopTask"{json!(true)}else{value.get("backgrounded").cloned().unwrap_or(json!(true))})},
   "agent:taskOutput"=>{let file=PathBuf::from(p.as_str().unwrap_or(""));if !self.task_files.lock().unwrap().contains(&file){return Ok(Value::Null)}use std::io::{Read,Seek,SeekFrom};let mut input=std::fs::File::open(&file).map_err(|e|e.to_string())?;let size=input.metadata().map_err(|e|e.to_string())?.len();let start=size.saturating_sub(65536);input.seek(SeekFrom::Start(start)).map_err(|e|e.to_string())?;let mut bytes=Vec::new();input.take(65536).read_to_end(&mut bytes).map_err(|e|e.to_string())?;let text=match String::from_utf8(bytes.clone()){Ok(s)=>s,Err(_)=>encoding_rs::IBM866.decode(&bytes).0.into_owned()};Ok(json!({"text":text,"truncated":start>0}))},
   "desk:summarize"=>self.quick(&format!("Summarize this earlier coding session in at most 600 words. Preserve goals, decisions, changed files, results, problems and next steps.\n\n{}",p.as_str().unwrap_or("").chars().take(120000).collect::<String>()),"You write precise handoff notes for software engineers.",Duration::from_secs(120)).map(|v|json!(v)),
   "agent:autoTitle"=>{let out=self.quick(&format!("Write a short title (2–5 words) in the language of this message. Reply with the title only, without quotes or trailing period.\n\n{}",s(p,"text").chars().take(2000).collect::<String>()),"You name chat conversations.",Duration::from_secs(45))?;let title=out.lines().next().unwrap_or("").trim_matches(|c:char|c.is_whitespace()||"\"'«»“”#*.".contains(c)).chars().take(80).collect::<String>();if title.is_empty(){return Ok(Value::Null)}self.rename(s(p,"sessionId"),&title,s(p,"cwd"),p["provider"].as_str().unwrap_or("claude"))?;Ok(json!(title))},
   "app:commitMessage"=>{let diff=super::git::diff_for_message(Path::new(p.as_str().unwrap_or("")),arr(a(1)))?;let out=self.quick(&format!("Write an English imperative git commit message, subject <=72 characters and optional three short bullets. Output only the message. Never include AI or co-author attribution.\n\n{}",diff.chars().take(24000).collect::<String>()),"You write concise git commit messages.",Duration::from_secs(120))?;Ok(json!(out.lines().filter(|l|!l.to_lowercase().contains("co-authored-by")&&!l.to_lowercase().contains("generated with")&&!l.starts_with("```")).collect::<Vec<_>>().join("\n").trim()))},
   "desk:skills"=>{if p=="codex"{let r=self.codex_server()?.request("skills/list",json!({"cwds":[a(1).as_str().unwrap_or(self.storage.home.to_str().unwrap_or(""))]}))?;Ok(json!(arr(&r["data"]).iter().flat_map(|x|arr(&x["skills"])).filter(|k|k["enabled"]!=false).map(|k|json!({"name":k["name"],"description":k["description"],"scope":k["scope"],"path":k["path"]})).collect::<Vec<_>>()))}else{Ok(json!([]))}},
-  "mcp:status"=>{if p=="codex"{let r=self.codex_server()?.request("mcpServerStatus/list",json!({}))?;Ok(json!(arr(&r["data"]).iter().map(|m|json!({"name":m["name"],"status":if !m["toolsError"].is_null(){"failed"}else if m["authStatus"]=="notLoggedIn"{"needs-auth"}else{"connected"},"tools":m["tools"].as_object().map(|v|v.len()).unwrap_or(0),"scope":if m["pluginId"].is_null(){"config"}else{"plugin"},"error":m["toolsError"]})).collect::<Vec<_>>()))}else if p=="antigravity"||p=="gemini"{Ok(json!([]))}else{let r=self.claude_control(json!({"subtype":"mcp_status"}))?;Ok(json!(arr(&r["mcpServers"]).iter().map(|m|json!({"name":m["name"],"status":m["status"],"scope":m.get("scope").or(m.get("source")),"tools":arr(&m["tools"]).len(),"error":m["error"]})).collect::<Vec<_>>()))}},
-  "mcp:reconnect"=>{if a(1)=="codex"{self.codex_server()?.request("config/mcpServer/reload",Value::Null)?;}else{self.claude_control(json!({"subtype":"mcp_reconnect","serverName":p}))?;}Ok(Value::Null)},
+  "mcp:status"=>{if p=="kimi"{let v=self.kimi_action(&json!({"action":"mcp"}))?;return Ok(json!(arr(&v).iter().map(|m|json!({"name":m["name"],"status":if m["config"]["enabled"]==false{"disabled"}else{"configured"},"scope":"user","tools":0})).collect::<Vec<_>>()))}if p=="codex"{let r=self.codex_server()?.request("mcpServerStatus/list",json!({}))?;Ok(json!(arr(&r["data"]).iter().map(|m|json!({"name":m["name"],"status":if !m["toolsError"].is_null(){"failed"}else if m["authStatus"]=="notLoggedIn"{"needs-auth"}else{"connected"},"tools":m["tools"].as_object().map(|v|v.len()).unwrap_or(0),"scope":if m["pluginId"].is_null(){"config"}else{"plugin"},"error":m["toolsError"]})).collect::<Vec<_>>()))}else if p=="antigravity"||p=="gemini"{Ok(json!([]))}else{let r=self.claude_control(json!({"subtype":"mcp_status"}))?;Ok(json!(arr(&r["mcpServers"]).iter().map(|m|json!({"name":m["name"],"status":m["status"],"scope":m.get("scope").or(m.get("source")),"tools":arr(&m["tools"]).len(),"error":m["error"]})).collect::<Vec<_>>()))}},
+  "mcp:reconnect"=>{if a(1)=="kimi"{return self.kimi_action(&json!({"action":"mcp/reconnect","name":p}))}if a(1)=="codex"{self.codex_server()?.request("config/mcpServer/reload",Value::Null)?;}else{self.claude_control(json!({"subtype":"mcp_reconnect","serverName":p}))?;}Ok(Value::Null)},
   "mcp:add"|"mcp:remove"=>self.mcp_cli(ch,args),
   "agent:rewind"=>{let t=self.thread(tid,p["config"]["provider"].as_str().unwrap_or("claude"))?;if t.run.lock().unwrap().is_none(){*t.config.lock().unwrap()=p["config"].clone();*t.session.lock().unwrap()=s(&p["config"],"resume").into();self.start(&t);}let run=self.active(tid)?;if run.provider!="claude"{return Err("File rewind is supported by Claude only".into())}let _lock=run.operation.lock().unwrap();let c=self.ensure(&run)?;c.control(json!({"subtype":"rewind_files","user_message_id":p["uuid"],"dry_run":p["dryRun"]==true}))},
-  "agent:rewindConversation"=>{let provider=p["provider"].as_str().unwrap_or("claude");let t=self.thread(tid,provider)?;let current=*t.provider.lock().unwrap()==provider;let r=t.run.lock().unwrap().clone();if current{if let Some(r)=r{self.stop_run(&r)}}let sid=p["sessionId"].as_str().filter(|s|!s.is_empty()).map(str::to_owned).unwrap_or(t.session.lock().unwrap().clone());let n=p["dropTurns"].as_i64().unwrap_or(0);if !sid.is_empty()&&n>0{match provider{"codex"=>{self.codex_server()?.request("thread/rollback",json!({"threadId":sid,"numTurns":n}))?;},"antigravity"|"gemini"=>{self.history.journal_rollback(provider,&sid,n)?;},_=>{}}}if current{if p["resumeAt"]==false||(provider=="claude"&&p["resumeAt"].is_null()){*t.session.lock().unwrap()=String::new();}else{*t.session.lock().unwrap()=sid;}*t.resume_at.lock().unwrap()=if provider=="claude"{p["resumeAt"].as_str().map(str::to_owned)}else{None};}Ok(json!(true))},
-  "agent:fork"=>{let provider=p["provider"].as_str().unwrap_or("claude");if provider=="codex"{let r=self.codex_server()?.request("thread/fork",json!({"threadId":p["sessionId"]}))?;return Ok(r["thread"]["id"].clone())}if provider=="claude"{return self.history.fork_claude(s(p,"sessionId"),s(p,"cwd"),s(p,"uuid"))}Err("Fork is not supported by this CLI".into())},
+  "agent:rewindConversation"=>{let provider=p["provider"].as_str().unwrap_or("claude");let t=self.thread(tid,provider)?;let current=*t.provider.lock().unwrap()==provider;let r=t.run.lock().unwrap().clone();if current{if let Some(r)=r{self.stop_run(&r)}}let sid=p["sessionId"].as_str().filter(|s|!s.is_empty()).map(str::to_owned).unwrap_or(t.session.lock().unwrap().clone());let n=p["dropTurns"].as_i64().unwrap_or(0);if !sid.is_empty()&&n>0{match provider{"kimi"=>{self.kimi_backend()?.session(&sid,":undo",Some(&json!({"count":n})))?;self.history.journal_rollback("kimi",&sid,n)?;},"codex"=>{self.codex_server()?.request("thread/rollback",json!({"threadId":sid,"numTurns":n}))?;},"antigravity"|"gemini"=>{self.history.journal_rollback(provider,&sid,n)?;},_=>{}}}if current{if p["resumeAt"]==false||(provider=="claude"&&p["resumeAt"].is_null()){*t.session.lock().unwrap()=String::new();}else{*t.session.lock().unwrap()=sid;}*t.resume_at.lock().unwrap()=if provider=="claude"{p["resumeAt"].as_str().map(str::to_owned)}else{None};}Ok(json!(true))},
+  "agent:fork"=>{let provider=p["provider"].as_str().unwrap_or("claude");if provider=="kimi"{let fork=self.kimi_backend()?.session(s(p,"sessionId"),":fork",Some(&s(p,"uuid").strip_prefix("kimi-turn:").and_then(|n|n.parse::<u64>().ok()).map(|n|json!({"turn_index":n})).unwrap_or(json!({}))))?;let sid=s(&fork,"id");self.kimi_import(sid)?;return Ok(json!(sid))}if provider=="codex"{let r=self.codex_server()?.request("thread/fork",json!({"threadId":p["sessionId"]}))?;return Ok(r["thread"]["id"].clone())}if provider=="claude"{return self.history.fork_claude(s(p,"sessionId"),s(p,"cwd"),s(p,"uuid"))}Err("Fork is not supported by this CLI".into())},
   _=>Err(format!("No native agent handler for {ch}"))}
     }
-    fn mcp_cli(&self, ch: &str, args: &[Value]) -> CoreResult {
+    fn mcp_cli(self: &Arc<Self>, ch: &str, args: &[Value]) -> CoreResult {
         let a = |i| args.get(i).unwrap_or(&Value::Null);
         let p = a(0);
         let adding = ch == "mcp:add";
@@ -2378,6 +2395,7 @@ impl Agents {
         } else {
             a(2).as_str().unwrap_or("claude")
         };
+        if provider=="kimi"{return self.kimi_action(&if adding{json!({"action":"mcp/add","input":p})}else{json!({"action":"mcp/remove","name":p})});}
         if !matches!(provider, "claude" | "codex") {
             return Err("This CLI does not expose MCP management".into());
         }
@@ -2455,6 +2473,7 @@ impl Agents {
         cwd: &str,
         provider: &str,
     ) -> CoreResult {
+        if provider=="kimi"{self.kimi_backend()?.session(sid,"/profile",Some(&json!({"title":title})))?;}
         if provider == "codex" {
             self.codex_server()?
                 .request("thread/name/set", json!({"threadId":sid,"name":title}))?;
@@ -2473,6 +2492,7 @@ impl Agents {
         for id in threads {
             self.close_thread(&id)
         }
+        if provider=="kimi"{self.kimi_backend()?.session(sid,":archive",Some(&json!({})))?;}
         if provider == "codex" {
             self.codex_server()?
                 .request("thread/archive", json!({"threadId":sid}))?;

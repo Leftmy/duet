@@ -96,13 +96,13 @@ function Questions({ threadId, approval }: { threadId: string; approval: Approva
               );
             })}
           </div>
-          <input
+          {q.allowOther!==false&&<input
             className="input"
             placeholder={t('approval.otherAnswer')}
             type={q.isSecret?'password':'text'} autoComplete="off"
             value={other[q.id??q.question] ?? ''}
             onChange={(e) => setOther((o) => ({ ...o, [q.id??q.question]: e.target.value }))}
-          />
+          />}
         </div>
       ))}
       <div className="approval-actions">
@@ -141,7 +141,7 @@ function PlanApproval({ threadId, approval }: { threadId: string; approval: Appr
         value={feedback}
         onChange={(e) => setFeedback(e.target.value)}
       />
-      <div className="approval-actions">
+      {approval.input?._kimiOptions?.length?<div className="approval-actions">{approval.input._kimiOptions.map((o:any)=><button className="btn" key={o.label} onClick={()=>respond(threadId,approval,'allow',{updatedInput:{selected_label:o.label},message:feedback.trim()||undefined})} title={o.description}>{o.label}</button>)}<button className="btn ghost" onClick={()=>respond(threadId,approval,'deny',{message:feedback.trim()||undefined})}>{t('approval.revisePlan')}</button></div>:<div className="approval-actions">
         <button
           className="btn ghost"
           onClick={() =>
@@ -171,7 +171,7 @@ function PlanApproval({ threadId, approval }: { threadId: string; approval: Appr
         >
           {t('approval.run')}
         </button>
-      </div>
+      </div>}
     </motion.div>
   );
 }

@@ -62,6 +62,8 @@ export function resetTime(v?: string | number | null) {
 
 /** Effort level labels (getters, so they follow the current UI language). */
 export const EFFORT_LABEL: Record<Effort, string> = {
+  get off(){return t('codex.effortNone');},
+  get on(){return t('kimi.thinking');},
   get none(){return t('codex.effortNone');},
   get minimal(){return t('codex.effortMinimal');},
   get ultra(){return 'Ultra';},

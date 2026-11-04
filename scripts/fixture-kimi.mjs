@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+// Kimi Code v2 server contract fixture; no account, network inference or real workspace mutations.
+import http from 'node:http';import fs from 'node:fs';import path from 'node:path';import {randomUUID} from 'node:crypto';
+import {WebSocketServer} from 'ws';
+const args=process.argv.slice(2);if(args.includes('--version')){console.log('Kimi Code 2.4.1');process.exit();}
+for(const key of Object.keys(process.env))if((/^KIMI_MODEL_|^(KIMI_API_KEY|MOONSHOT_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY)$/.test(key))&&process.env[key])throw Error('Subscription credential override leaked: '+key);
+const home=process.env.KIMI_CODE_HOME;fs.mkdirSync(home,{recursive:true});fs.writeFileSync(path.join(home,'server.token'),'fixture-kimi-token');
+const root=path.dirname(home),trace=(action,data)=>fs.appendFileSync(path.join(root,'kimi-trace.jsonl'),JSON.stringify({action,...data})+'\n');
+const sessions=new Map(),sockets=new Map(),pending=new Map();let signed=true;
+const model={provider:'managed:kimi-code',model:'kimi-code/kimi-for-coding',display_name:'Kimi fixture',max_context_size:262144,support_efforts:['off','low','high'],default_effort:'high'};
+const create=(input={})=>{const id='session_'+randomUUID();const v={id,title:'Kimi fixture',metadata:{cwd:input.workDir??root},agent_config:{swarm_mode:false},seq:0,turn:0,messages:[],frames:[],mcp:input.mcpServers??{}};sessions.set(id,v);return v;};
+const emit=(sid,frame)=>{for(const [ws,ids]of sockets)if(ids.has(sid)&&ws.readyState===1)ws.send(JSON.stringify({session_id:sid,...frame}));};
+const ops=(s,ops,agent='main')=>{const seq=++s.seq;emit(s.id,{type:'transcript.ops',payload:{agent_id:agent,seq,ops}});};
+const finish=(s,text,agent='main',turn=s.turn)=>{ops(s,[{op:'frame.upsert',turnId:'turn'+turn,stepId:'step'+turn,frame:{kind:'text',frameId:'answer'+turn,role:'assistant',text:'',state:'running'}},{op:'append',target:{type:'frame',turnId:'turn'+turn,stepId:'step'+turn,frameId:'answer'+turn},offset:0,text} ],agent);emit(s.id,{type:'usage',agent_id:agent,context_tokens:100,max_context_tokens:262144});ops(s,[{op:'turn.upsert',turn:{kind:'turn',turnId:'turn'+turn,ordinal:turn,state:'completed',durationMs:10}}],agent);if(agent==='main')s.running=false;};
+async function prompt(s,b){const text=b.content.filter(i=>i.type==='text').map(i=>i.text).join('\n'),agent=b.agent_id??'main',turn=++s.turn;s.running=true;trace('prompt',{sid:s.id,body:b,mcp:s.mcp});s.messages.unshift({id:randomUUID(),role:'user',created_at:new Date().toISOString(),content:b.content});ops(s,[{op:'turn.upsert',turn:{kind:'turn',turnId:'turn'+turn,ordinal:turn,state:'running'}},{op:'step.upsert',turnId:'turn'+turn,step:{stepId:'step'+turn,state:'running'}}],agent);
+ if(text==='HOLD')return;
+ if(text==='SEED_KIMI_CTX'){finish(s,'Archived log KIMI_CONTEXT_OBSOLETE_CANARY');return;}
+ if(text==='native'){emit(s.id,{type:'agent',agent_id:'child',status:'running',model:model.model});ops(s,[{op:'turn.upsert',turn:{kind:'turn',turnId:'child-turn',ordinal:1,state:'running'}},{op:'frame.upsert',turnId:'child-turn',frame:{kind:'text',frameId:'child-text',role:'assistant',text:'native child text',state:'done'}}],'child');finish(s,'native root');return;}
+ if(text==='approve'||text==='questions'||text==='plan'){const id='interaction-'+randomUUID();pending.set(id,{s,turn,text});emit(s.id,{type:'interaction',agent_id:agent,interaction_id:id,tool_call_id:'tool'+turn,status:'pending',kind:text==='questions'?'question':'approval',request:text==='questions'?{questions:[{id:'q1',question:'Choose',multi_select:true,options:[{id:'a',label:'A, B'},{id:'b',label:'C'}]}]}:{tool_name:text==='plan'?'ExitPlanMode':'Bash',action:'Fixture command',tool_input_display:text==='plan'?{kind:'plan_review',plan:'Fixture plan',options:[{label:'Continue',description:'Approved plan'}]}:{kind:'shell',command:'fixture-only'}}});return;}
+ if(text==='mcp'||text==='mcp-delegate'){const url=s.mcp.duet.url;const rpc=async(method,params)=>{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});return r.json();};const init=await rpc('initialize',{}),list=await rpc('tools/list',{});trace('mcp',{init,list});const tool=list.result.tools.find(t=>t.name===(text==='mcp-delegate'?'desk-agents__run_agent':'desk-context__inspect'));const result=await rpc('tools/call',{name:tool.name,arguments:text==='mcp-delegate'?{agent:'codex',task:'Kimi team task',background:false}:{}});trace('mcp-call',{result});finish(s,text==='mcp-delegate'?JSON.stringify(result):'MCP tools: '+list.result.tools.length);return;}
+ setTimeout(()=>finish(s,'Kimi: '+text,agent,turn),20);
+}
+const server=http.createServer(async(req,res)=>{const url=new URL(req.url,'http://localhost'),route=decodeURIComponent(url.pathname);let b={};for await(const chunk of req)b._raw=(b._raw??'')+chunk;if(b._raw)b=JSON.parse(b._raw);const ok=data=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({code:0,msg:'success',data}));};const fail=msg=>{res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({code:1,msg,data:null}));};
+ try{if(route==='/api/v1/healthz')return ok({});if(req.headers.authorization!=='Bearer fixture-kimi-token'){res.writeHead(401);return res.end();}trace('request',{method:req.method,route,body:b});
+ if(route==='/api/v1/meta')return ok({backend:'v2',server_version:'2.4.1',capabilities:{websocket:true}});
+ if(route==='/api/v1/auth')return ok({models_ready:signed,managed_provider:signed?{name:'managed:kimi-code',status:'authenticated'}:null});
+ if(route==='/api/v1/config')return ok({default_model:model.model,providers:{'managed:kimi-code':{type:'kimi',has_api_key:true}},hooks:{SessionStart:[]}});
+ if(route==='/api/v1/models')return ok({items:[model,{provider:'custom',model:'custom/paid'}]});
+ if(route==='/api/v1/oauth/login'){if(req.method==='DELETE')return ok({status:'cancelled'});if(req.method==='GET'){signed=true;return ok({status:'authenticated'});}return ok({status:'pending',user_code:'FIXTURE',verification_uri:'https://example.invalid/kimi',interval:2});}
+ if(route==='/api/v1/oauth/logout'){signed=false;return ok({ok:true});}
+ if(route==='/api/v1/oauth/usage')return ok({kind:'ok',quota:{usages:{limit5h:{usedRatio:.1},monthTotal:{usedRatio:.2},monthCode:{usedRatio:.3}}}});
+ if(route==='/api/v1/oauth/userinfo')return ok({email:'fixture@example.invalid'});
+ if(route==='/api/v1/sessions')return ok({items:[...sessions.values()],has_more:false});
+ if(route==='/api/v1/tools')return ok({tools:[{name:'Read'},{name:'Bash'},{name:'mcp__duet__desk-context__inspect'}]});
+ if(route==='/api/v1/plugins')return ok(req.method==='POST'?{id:b.source,enabled:true}:{plugins:[{id:'fixture-plugin',enabled:true}]});
+ if(route==='/api/v1/plugins/marketplace')return ok({entries:[]});if(route.startsWith('/api/v1/plugins/'))return ok({ok:true});
+ if(route.startsWith('/api/v2/mcp/'))return ok(route.endsWith('servers:test')?{success:true,output:'fixture'}:[{name:'fixture-mcp',config:{transport:'http',url:'https://example.invalid'}}]);
+ const debug=route.match(/^\/api\/v1\/debug(?:\/session\/([^/]+))?(?:\/agent\/([^/]+))?\/([^/]+)\/([^/]+)$/);if(debug){const [,sid,agent,service,method]=debug;if(service==='sessionManager'){if(method==='create')return ok({id:create(b).id});if(method==='resume'){const s=sessions.get(b[0]);if(!s)return fail('missing session');s.mcp=b[1]?.mcpServers??{};return ok({id:s.id});}return ok(null);}if(service==='agentLoopService'){emit(sid,{type:'agent',agent_id:agent,status:'idle'});return ok(true);}if(service==='agentFullCompactionService')return ok(null);if(service==='agentProfileService'){if(method==='data')return ok({systemPrompt:'Fixture system',activeTools:[]});return ok({});}if(service==='sessionAgentProfileCatalog')return ok([{name:'explore',description:'Read only explorer'}]);return ok(true);}
+ const match=route.match(/^\/api\/v1\/sessions\/(session_[^/:]+)(.*)$/);if(match){const s=sessions.get(match[1]),suffix=match[2];if(!s)return fail('missing session');if(suffix==='/profile'){if(req.method==='POST'){Object.assign(s.agent_config,b.agent_config);if(b.title)s.title=b.title;}return ok(s);}
+ if(suffix==='/prompts'){const status=s.running?'queued':'running';const id=b.prompt_id??randomUUID();ok({prompt_id:id,status});void prompt(s,b).catch(e=>{console.error(e);finish(s,String(e));});return;}
+ if(suffix==='/prompts::steer')return ok({steered:true});
+ if(suffix.startsWith('/interactions/')){const id=suffix.split('/')[2].split(':')[0],p=pending.get(id);pending.delete(id);trace('interaction-response',{body:b});ok({responded:true});setTimeout(()=>{emit(s.id,{type:'interaction',interaction_id:id,status:'ended'});finish(s,JSON.stringify(b),'main',p.turn);},5);return;}
+ if(suffix===':abort'){ok({aborted:true});ops(s,[{op:'turn.upsert',turn:{kind:'turn',turnId:'turn'+s.turn,ordinal:s.turn,state:'cancelled'}}]);s.running=false;return;}
+ if(suffix===':compact'){ok({started:true});setTimeout(()=>emit(s.id,{type:'agent',agent_id:'main',status:'idle'}),20);return;}
+ if(suffix===':btw')return ok({agent_id:'btw'});
+ if(suffix===':fork'){const n=create({workDir:s.metadata.cwd});n.messages=[...s.messages];return ok(n);}
+ if(suffix===':undo')return ok({undone:b.count});
+ if(suffix==='/messages')return ok({items:s.messages,has_more:false});
+ if(suffix==='/snapshot')return ok({agent:s.agent_config,usage:{context_tokens:100,max_context_tokens:262144}});
+ if(suffix==='/goal')return ok(s.agent_config.goal_objective?{goal:{objective:s.agent_config.goal_objective,status:s.agent_config.goal_control??'active'}}:{goal:null});
+ if(suffix==='/skills')return ok({skills:[{name:'fixture-skill',description:'Fixture skill'}]});if(suffix.includes('/skills/')){const turn=++s.turn;ops(s,[{op:'turn.upsert',turn:{kind:'turn',turnId:'turn'+turn,ordinal:turn,state:'running'}}]);ok({activated:true});setTimeout(()=>finish(s,'Skill activated','main',turn),20);return;}
+ if(suffix==='/tasks')return ok({items:[{id:'task-fixture',status:'running',description:'fixture task'}]});if(suffix.includes('/tasks/'))return ok({cancelled:true});
+ if(suffix==='/transcript')return ok({items:[],has_more_older:false});if(suffix==='/file-history/changes')return ok({changes:[]});return ok(s);}
+ return fail('Unknown fixture route '+route);
+ }catch(e){console.error(e);if(!res.headersSent)fail(String(e));}});
+const wss=new WebSocketServer({noServer:true});server.on('upgrade',(req,socket,head)=>{if(req.headers.authorization!=='Bearer fixture-kimi-token')return socket.destroy();wss.handleUpgrade(req,socket,head,ws=>wss.emit('connection',ws));});wss.on('connection',ws=>{sockets.set(ws,new Set());ws.on('close',()=>sockets.delete(ws));ws.on('message',raw=>{const f=JSON.parse(raw);if(f.type==='subscribe_v2'){sockets.get(ws).add(f.payload.session_id);ws.send(JSON.stringify({type:'transcript.reset',session_id:f.payload.session_id,payload:{agent_id:'main',seq:sessions.get(f.payload.session_id)?.seq??0,snapshot:{items:[]}}}));}if(f.type==='unsubscribe_v2')sockets.get(ws).delete(f.payload.session_id);ws.send(JSON.stringify({type:'ack',id:f.id,code:0,payload:{accepted:[f.payload?.session_id].filter(Boolean),not_found:[]}}));});});
+server.listen(Number(args[args.indexOf('--port')+1]),'127.0.0.1');

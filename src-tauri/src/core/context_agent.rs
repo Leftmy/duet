@@ -9,6 +9,12 @@ pub(super) struct Gateway {
     tokens: Arc<Mutex<HashMap<String, Weak<Run>>>>,
 }
 impl Agents {
+    pub(super) fn kimi_mcp_url(self:&Arc<Self>,run:&Arc<Run>)->Result<String,String>{
+        self.context_command_hint(run)?;
+        let gateway=self.context_gateway.lock().unwrap();let gateway=gateway.as_ref().ok_or("MCP gateway unavailable")?;
+        let token=gateway.tokens.lock().unwrap().iter().find(|(_,weak)|weak.upgrade().is_some_and(|r|Arc::ptr_eq(&r,run))).map(|(token,_)|token.clone()).ok_or("MCP run capability unavailable")?;
+        Ok(format!("http://{}/mcp/{token}",gateway.address))
+    }
     pub(super) fn context_codex_config(&self, c: &Client) -> CoreResult {
         let config = c.request("config/read", json!({"includeLayers":false}))?;
         let servers = config["config"]["mcp_servers"]
@@ -657,6 +663,7 @@ fn context_http(
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+    let mut mcp=false;let mut rpc_id=Value::Null;let mut notification=false;
     let result = (|| -> CoreResult {
         let mut bytes = Vec::new();
         let mut chunk = [0; 4096];
@@ -706,9 +713,8 @@ fn context_http(
         let length = length
             .filter(|n| *n <= 256 * 1024)
             .ok_or("Context request exceeds 256 KiB")?;
-        let token = path
-            .strip_prefix("/context/")
-            .ok_or("Unknown context endpoint")?;
+        mcp=path.starts_with("/mcp/");
+        let token = path.strip_prefix(if mcp{"/mcp/"}else{"/context/"}).ok_or("Unknown local endpoint")?;
         let run = tokens
             .lock()
             .unwrap()
@@ -729,6 +735,19 @@ fn context_http(
         if !p.is_object() {
             return Err("Expected a context request object".into());
         }
+        if mcp{
+            rpc_id=p["id"].clone();notification=rpc_id.is_null();
+            let depth=t.sub.as_ref().map(|s|s.depth).unwrap_or(0);
+            return match s(&p,"method"){
+                "initialize"=>Ok(json!({"protocolVersion":p["params"]["protocolVersion"].as_str().unwrap_or("2025-03-26"),"capabilities":{"tools":{}},"serverInfo":{"name":"Duet","version":env!("CARGO_PKG_VERSION")},"instructions":"Duet tools connect this agent to its browser, context archive and teammates. Use the supplied run IDs and keep event cursors."})),
+                "notifications/initialized"|"ping"=>Ok(json!({})),
+                "notifications/cancelled"=>{owner.cancel(&run,Some(&format!("kimi-mcp:{}",p["params"]["requestId"])));Ok(Value::Null)},
+                "tools/list"=>Ok(json!({"tools":toolsets::all(depth).iter().flat_map(|set|arr(&set["tools"]).iter().map(|tool|json!({"name":format!("{}__{}",s(set,"name"),s(tool,"name")),"description":tool["description"],"inputSchema":tool["inputSchema"]})).collect::<Vec<_>>()).collect::<Vec<_>>()})),
+                "tools/call"=>{let name=s(&p["params"],"name");let(set,name)=name.split_once("__").ok_or("Invalid Duet tool name")?;let args=p["params"]["arguments"].clone();{let tool_id=format!("kimi-mcp:{}",rpc_id);let request=collaboration::Request::new(&run,vec![tool_id.clone()]);owner.tool(&run,set,name,&args,&tool_id,&request.cancelled)}},
+                _ if notification=>Ok(Value::Null),
+                _=>Err("Unknown MCP method".into()),
+            };
+        }
         p["threadId"] = json!(t.id);
         p["provider"] = json!(run.provider);
         if p["action"] == "edit" || p["action"] == "restore" {
@@ -736,10 +755,11 @@ fn context_http(
         }
         owner.context_api(&p)
     })();
-    let body = match result {
+    let body = if mcp{match result{Ok(result)=>json!({"jsonrpc":"2.0","id":rpc_id,"result":result}),Err(error)=>json!({"jsonrpc":"2.0","id":rpc_id,"error":{"code":-32000,"message":error}})}}else{match result {
         Ok(result) => json!({"result":result}),
         Err(error) => json!({"error":error}),
-    }
+    }}
     .to_string();
-    let _=write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",body.len());
+    let status=if mcp&&notification{"202 Accepted"}else{"200 OK"};
+    let _=write!(stream,"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",body.len());
 }

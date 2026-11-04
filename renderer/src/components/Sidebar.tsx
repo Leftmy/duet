@@ -165,7 +165,7 @@ function MiniBar({
   showReset,
 }: {
   label: string;
-  w?: { pct: number; resetsAt?: string | number | null };
+  w?: { label?: string; pct: number; resetsAt?: string | number | null };
   now: number;
   showReset?: boolean;
 }) {

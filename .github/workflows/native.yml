@@ -37,6 +37,7 @@ jobs:
       - run: npm run test:native-ownership
       - run: cargo test --locked --lib --manifest-path src-tauri/Cargo.toml
       - run: cargo build --locked --manifest-path src-tauri/Cargo.toml --examples
+      - run: npm run test:kimi-published
       - run: npm run test:rust-core
       - run: npm run build
       - name: Compile native shell

@@ -54,6 +54,7 @@ pub struct History {
     storage: Arc<Storage>,
     claude_root: PathBuf,
     db: Mutex<Option<Connection>>,
+    journal_gate:Mutex<()>,
 }
 impl History {
     pub fn new(storage: Arc<Storage>, claude_root: PathBuf) -> Self {
@@ -61,6 +62,7 @@ impl History {
             storage,
             claude_root,
             db: Mutex::new(None),
+            journal_gate:Mutex::new(()),
         }
     }
     fn with_db<T>(
@@ -88,7 +90,7 @@ impl History {
     pub fn list(&self) -> CoreResult {
         let overrides = self.storage.read("native/session-metadata.json");
         let mut out = Vec::new();
-        for provider in ["claude", "codex", "antigravity", "gemini"] {
+        for provider in ["claude", "codex", "antigravity", "kimi", "gemini"] {
             let mut entries = self.catalog(provider)?;
             entries.sort_by_key(|v| std::cmp::Reverse(v["lastModified"].as_u64().unwrap_or(0)));
             let limit = match provider {
@@ -111,7 +113,7 @@ impl History {
         Ok(json!(out))
     }
     fn catalog(&self, provider: &str) -> Result<Vec<Value>, String> {
-        if matches!(provider, "antigravity" | "gemini") {
+        if matches!(provider, "antigravity" | "gemini" | "kimi") {
             let root = self.storage.data.join(provider);
             let mut entries = Vec::new();
             if let Ok(files) = fs::read_dir(root) {
@@ -255,7 +257,7 @@ impl History {
         if !valid_id(provider, id) {
             return Err("Invalid session id".into());
         }
-        if matches!(provider, "antigravity" | "gemini") {
+        if matches!(provider, "antigravity" | "gemini" | "kimi") {
             let path = self.storage.data.join(provider).join(format!("{id}.jsonl"));
             if path.exists() {
                 return Ok(path);
@@ -491,6 +493,7 @@ impl History {
                     } else {
                         events
                     };
+                    let events=if provider=="kimi"{if let Some(agent)=agent{events.into_iter().filter(|e|e["agent"]==agent).collect()}else{events}}else{events};
                     insert(events)
                 },
             )?;
@@ -609,7 +612,7 @@ impl History {
                 )?;
             }
             child.and_then(|child| self.find("codex", &child, None).ok())
-        } else {
+        } else if provider=="kimi" {Some(path.clone())} else {
             None
         };
         let Some(selected) = selected else {
@@ -811,7 +814,7 @@ impl History {
                 json!({"type":"custom-title","customTitle":title,"sessionId":id})
             )
             .map_err(error)?;
-        } else if matches!(provider, "gemini" | "antigravity") {
+        } else if matches!(provider, "gemini" | "antigravity" | "kimi") {
             let path = self.storage.data.join(provider).join(format!("{id}.json"));
             let mut meta = storage::read_json(&path);
             meta["title"] = json!(title);
@@ -831,7 +834,7 @@ impl History {
             let target = trash.join(path.file_name().unwrap());
             fs::rename(&path, target).map_err(error)?;
         }
-        if matches!(provider, "gemini" | "antigravity") {
+        if matches!(provider, "gemini" | "antigravity" | "kimi") {
             let meta = path.with_extension("json");
             if meta.exists() {
                 fs::rename(&meta, trash.join(meta.file_name().unwrap())).map_err(error)?;
@@ -850,7 +853,7 @@ impl History {
         Ok(Value::Null)
     }
     pub fn create_journal(&self, provider: &str, cwd: &str, text: &str) -> Result<Value, String> {
-        if !matches!(provider, "gemini" | "antigravity") {
+        if !matches!(provider, "gemini" | "antigravity" | "kimi") {
             return Err("Not a journal provider".into());
         }
         let id = format!(
@@ -866,6 +869,7 @@ impl History {
         )?;
         Ok(meta)
     }
+    pub fn register_kimi(&self,id:&str,cwd:&str,title:&str)->Result<(),String>{if !valid_id("kimi",id){return Err("Invalid Kimi session id".into())}let path=self.storage.data.join("kimi").join(format!("{id}.json"));if !path.exists(){storage::write_json(&path,&json!({"sessionId":id,"provider":"kimi","cwd":cwd,"title":title,"createdAt":storage::now(),"lastModified":storage::now()}))?;self.journal_append("kimi",id,&json!({"type":"session","sessionId":id}))?;}Ok(())}
     pub fn journal_meta(&self, provider: &str, id: &str) -> Result<Value, String> {
         if !valid_id(provider, id) {
             return Err("Invalid session id".into());
@@ -889,6 +893,8 @@ impl History {
         if !valid_id(provider, id) {
             return Err("Invalid session id".into());
         }
+        let mut line=serde_json::to_vec(event).map_err(error)?;line.push(b'\n');
+        let _guard=self.journal_gate.lock().map_err(error)?;
         let dir = self.storage.data.join(provider);
         fs::create_dir_all(&dir).map_err(error)?;
         let mut file = fs::OpenOptions::new()
@@ -896,7 +902,7 @@ impl History {
             .append(true)
             .open(dir.join(format!("{id}.jsonl")))
             .map_err(error)?;
-        writeln!(file, "{event}").map_err(error)
+        file.write_all(&line).map_err(error)
     }
     pub fn journal_rollback(&self, provider: &str, id: &str, drop_turns: i64) -> CoreResult {
         self.with_db(|db|{let source=self.ensure(db,provider,id,None,None,None,None)?;let total=db.query_row("SELECT turns FROM history_sources WHERE source=?1",[&source],|r|r.get::<_,i64>(0)).map_err(error)?;let keep=total.saturating_sub(drop_turns.max(0));let path=self.find(provider,id,None)?;let temp=path.with_extension(format!("{}.tmp",uuid::Uuid::new_v4()));let mut file=File::create(&temp).map_err(error)?;{let mut stmt=db.prepare("SELECT event FROM history_events WHERE source=?1 AND turn<=?2 ORDER BY seq").map_err(error)?;let rows=stmt.query_map(params![source,keep],|r|r.get::<_,String>(0)).map_err(error)?;for row in rows{writeln!(file,"{}",row.map_err(error)?).map_err(error)?;}}file.sync_all().map_err(error)?;drop(file);fs::rename(temp,path).map_err(error)?;self.journal_patch(provider,id,&json!({"nativeId":null,"rewound":keep>0,"lastModified":storage::now()}))?;Ok(json!(true))})
@@ -907,6 +913,7 @@ fn valid_id(provider: &str, id: &str) -> bool {
         "claude" | "codex" => id,
         "gemini" => id.strip_prefix("gem-").unwrap_or(""),
         "antigravity" => id.strip_prefix("agy-").unwrap_or(""),
+        "kimi" => id.strip_prefix("session_").unwrap_or(""),
         _ => return false,
     };
     uuid::Uuid::parse_str(raw).is_ok()
@@ -929,6 +936,10 @@ mod tests {
         ));
         let history = History::new(storage, home.join(".claude/projects"));
         (root, history, id, path)
+    }
+    #[test]
+    fn concurrent_journal_writers_preserve_every_json_record(){
+        let (_root,history,id,_)=fixture();let path=history.storage.data.join("kimi").join(format!("session_{id}.jsonl"));let history=Arc::new(history);let mut workers=Vec::new();for worker in 0..8{let history=history.clone();let id=format!("session_{id}");workers.push(std::thread::spawn(move||{for item in 0..100{history.journal_append("kimi",&id,&json!({"type":"user","id":format!("{worker}-{item}"),"text":"Привет 😀 ".repeat(200),"nested":{"worker":worker,"item":item}})).unwrap();}}));}for worker in workers{worker.join().unwrap();}let lines=fs::read_to_string(path).unwrap();let ids:std::collections::HashSet<String>=lines.lines().map(|line|{let v:Value=serde_json::from_str(line).unwrap();assert_eq!(v["text"].as_str().unwrap(),"Привет 😀 ".repeat(200));s(&v,"id").to_owned()}).collect();assert_eq!(ids.len(),800);assert_eq!(lines.lines().count(),800);
     }
     #[test]
     fn active_chain_compaction_and_pages_do_not_load_other_branches() {
