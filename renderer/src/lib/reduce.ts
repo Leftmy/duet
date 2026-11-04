@@ -355,7 +355,7 @@ export function applyEvent(t0: Thread, ev: DeskEvent, opts: { history?: boolean 
   if (ev.type === 'context') return { ...t0, context: ev.usage };
   if (ev.type === 'role') return {...t0,role:ev.role,permissionMode:ev.role==='executor'?(t0.role&&t0.role!=='executor'?'default':t0.permissionMode):'plan'};
   if (ev.type === 'dispatch') return {...t0,dispatch:{phase:ev.phase,reason:ev.reason},status:ev.phase==='cancelled'?'idle':'running',activity:ev.phase==='queued'?tr('workbench.queueReason.'+ev.reason):undefined};
-  if(ev.type==='kimi.state')return {...t0,kimi:{...t0.kimi,...ev.state}};
+  if(ev.type==='kimi.state'){const cfg=ev.state.settings;const permissionMode:Thread['permissionMode']=t0.role&&t0.role!=='executor'||cfg?.plan_mode?'plan':cfg?.permission_mode==='yolo'?'bypassPermissions':cfg?.permission_mode==='auto'?'auto':'default';return {...t0,kimi:{...t0.kimi,...ev.state},...(cfg?.model?{model:cfg.model}:{}),...(cfg?.thinking?{effort:cfg.thinking}:{}),...(cfg?.permission_mode?{permissionMode}:{})};}
   if(ev.type==='codex.state')return {...t0,codex:{...t0.codex,...ev.state},...(ev.state.title?{title:ev.state.title}:{})};
   if (ev.type === 'status') return {
     ...t0,

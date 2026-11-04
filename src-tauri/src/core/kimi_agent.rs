@@ -73,7 +73,8 @@ impl Agents {
         let _ = self
             .history
             .journal_patch("kimi", &sid, &json!({"imported":true}));
-        backend.session(&sid,"/profile",Some(&json!({"agent_config":{"model":model,"permission_mode":kimi_permission(&cfg),"plan_mode":cfg["permissionMode"]=="plan"}})))?;
+        let mut settings=json!({"model":model,"permission_mode":kimi_permission(&cfg),"plan_mode":cfg["permissionMode"]=="plan"});if let Some(effort)=backend.thinking(&model,s(&cfg,"effort"))?{settings["thinking"]=json!(effort);}
+        backend.session(&sid,"/profile",Some(&json!({"agent_config":settings})))?;
         let profile = backend.debug(
             Some(&sid),
             Some("main"),
@@ -284,6 +285,8 @@ impl Agents {
             self.emit_event(&run, event);
         }
         if frame["type"] == "agent" && frame["agent_id"] == "main" {
+            if let Some(t)=run.thread.upgrade(){let mut cfg=t.config.lock().unwrap();if let Some(model)=frame["model"].as_str().filter(|v|!v.is_empty()){cfg["model"]=json!(model);}if let Some(effort)=frame["thinking"].as_str(){cfg["effort"]=json!(effort);}if frame["permission_mode"].is_string(){cfg["permissionMode"]=json!(if roles_agent::read_only(&cfg)||frame["plan_mode"]==true{"plan"}else{match s(&frame,"permission_mode"){"yolo"=>"bypassPermissions","auto"=>"auto",_=>"default"}});}}
+
             self.emit_event(&run,json!({"type":"kimi.state","state":{"settings":{"model":frame["model"],"thinking":frame["thinking"],"permission_mode":frame["permission_mode"],"plan_mode":frame["plan_mode"],"swarm_mode":frame["swarm_mode"],"tower_mode":frame["tower_mode"]}}}));
         }
         if frame["type"] == "goal" {

@@ -43,6 +43,9 @@ try {
   assert.equal(applyEvent(executor, { type: 'role', role: 'executor' }).permissionMode, 'bypassPermissions');
   const reviewer = applyEvent(executor, { type: 'role', role: 'reviewer' });
   assert.equal(reviewer.permissionMode, 'plan');
+  const kimiState={type:'kimi.state',state:{settings:{model:'kimi-code/kimi-for-coding',thinking:'high',permission_mode:'yolo',plan_mode:false}}};
+  const kimi=applyEvent({...executor,provider:'kimi',permissionMode:'plan'},kimiState);assert.equal(kimi.permissionMode,'bypassPermissions');assert.equal(kimi.model,'kimi-code/kimi-for-coding');assert.equal(kimi.effort,'high');assert.equal(applyEvent({...kimi,role:'reviewer'},kimiState).permissionMode,'plan');
+  assert.equal(applyEvent(kimi,{type:'kimi.state',state:{settings:{permission_mode:'manual',plan_mode:true}}}).permissionMode,'plan');
   assert.equal(applyEvent(reviewer, { type: 'role', role: 'executor' }).permissionMode, 'default');
   const wait = async (condition) => {
     for (let i = 0; i < 100; i++) {
