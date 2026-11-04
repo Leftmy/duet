@@ -1709,7 +1709,7 @@ impl Agents {
             cwd,
             Arc::new(move |c, msg| {
                 if let (Some(owner), Some(run)) = (weak.upgrade(), wr.upgrade()) {
-                    if !Self::current(&run) {
+                    if !Self::current(&run) || c.closed.load(Ordering::Acquire) {
                         return;
                     }
                     let Some(t) = run.thread.upgrade() else {
@@ -1734,16 +1734,16 @@ impl Agents {
                             }
                         }
                     }
-                    let events = run
-                        .google
-                        .lock()
-                        .unwrap()
-                        .as_mut()
-                        .map(|tr| tr.push(&msg, &run.provider))
-                        .unwrap_or_default();
-                    if events.iter().any(|ev| ev["type"] == "turn.end") {
-                        *run.google.lock().unwrap() = None;
-                    }
+                    let events = {
+                        let mut translator=run.google.lock().unwrap();
+                        let events=translator.as_mut().map(|tr|tr.push(&msg,&run.provider)).unwrap_or_default();
+                        if events.iter().any(|ev|ev["type"]=="turn.end"){
+                            // Retire this one-turn process before announcing completion.
+                            *translator=None;
+                            c.closed.store(true,Ordering::Release);
+                        }
+                        events
+                    };
                     for mut ev in events {
                         let end = ev["type"] == "turn.end";
                         if end {

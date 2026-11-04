@@ -18,7 +18,7 @@ try{
   const oldSid=events.find(e=>e.payload?.threadId===id&&e.payload.ev?.type==='session').payload.ev.sessionId;
   await assert.rejects(api(id,provider,'edit',{expected_revision:view.revision,operations:[{action:'archive',ids:[view.blocks.find(b=>b.kind==='user').id]}]}),/protected/i);
   const response=await send(id,provider,'CONTEXT '+JSON.stringify({name:'edit',args:{expected_revision:view.revision,operations:[{action:'archive',ids:[tool.id]}]}}));
-  assert.match(response.payload.ev.text,/CONTEXT_RESULT /);
+  assert.match(response.payload.ev.text,/CONTEXT_RESULT /,JSON.stringify(response.payload.ev));
   const parsed=JSON.parse(response.payload.ev.text.split('CONTEXT_RESULT ')[1]);assert.ok(parsed.job_id,JSON.stringify(parsed));
   await jobState(id,provider,parsed.job_id,'applied');
   await wait(e=>events.indexOf(e)>events.indexOf(response)&&e.payload?.threadId===id&&e.payload.ev?.type==='turn.end'&&!e.payload.ev.contextCheckpoint);

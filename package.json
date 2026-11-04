@@ -24,7 +24,7 @@
     "test:agents": "node scripts/test-native-teams.mjs",
     "test:native": "node scripts/native-inspect.mjs",
     "test:native-ownership": "node scripts/check-native-ownership.mjs",
-    "test:rust-core": "node scripts/test-native-core.mjs && node scripts/test-native-history.mjs && node scripts/test-native-teams.mjs && node scripts/test-native-steering.mjs && node scripts/test-native-context.mjs && node scripts/test-native-workbench.mjs && node scripts/test-native-kimi.mjs",
+    "test:rust-core": "node scripts/test-native-core.mjs && node scripts/test-native-history.mjs && node scripts/test-native-teams.mjs && node scripts/test-native-steering.mjs && node scripts/test-native-google-lifecycle.mjs && node scripts/test-native-context.mjs && node scripts/test-native-workbench.mjs && node scripts/test-native-kimi.mjs",
     "test:native-linux": "node scripts/test-native-linux.mjs",
     "test:ui": "node scripts/test-ui-load.mjs",
     "icon": "node scripts/make-icon.mjs",
