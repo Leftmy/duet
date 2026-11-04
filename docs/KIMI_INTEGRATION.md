@@ -10,7 +10,7 @@ One owned `kimi web --no-open --debug-endpoints` process serves independent chat
 
 ## Implemented surfaces
 
-- Images/video, assistant/reasoning streams, incremental tool output and errors, retries, todo plans, context usage and per-turn usage statistics.
+- Image input, assistant/reasoning streams, incremental tool output and errors, retries, todo plans, context usage and per-turn usage statistics.
 - Mid-turn prompt queue and immediate steering via Kimi's `prompts::steer`; interrupt cancels the current provider turn.
 - Manual, automatic and explicit bypass permissions; plan mode. The unsupported edit-only permission mode is not offered. Reviewer/researcher tool allowlists exclude shell/write tools and external MCP; Duet MCP enforces the actual role independently.
 - Approval cards preserve plan option labels, question IDs, multi-select values and free text. Approval requests remain scoped to the owning chat.
@@ -21,7 +21,7 @@ One owned `kimi web --no-open --debug-endpoints` process serves independent chat
 - Skills/catalog and activation, running tasks and stop, tool catalogs, plugin marketplace/install/enable/disable/remove, hook inspection, global MCP add/update/remove/test and OAuth begin/complete/cancel.
 - `/status`, `/help`, `/login`, `/model`, `/permissions`, `/compact`, `/goal`, `/swarm`, `/tower`, `/btw`, `/tasks`, `/agents`, `/skills`, `/mcp`, `/plugins`, `/hooks`, `/fork`, `/new`, `/clear` route to native controls. Unknown slash text remains ordinary user input.
 
-The official v2 server is the compatibility boundary, not the archived Python Wire API. Ephemeral per-session MCP and tool-policy overlays use authenticated SDK service endpoints and are tested against the pinned published CLI. Upstream upgrades require the contract tests before changing the pin. Terminal-specific interactive widgets and operating Kimi's own terminal UI are outside the desktop integration. Native undo does not promise filesystem rollback; use Duet's Git/worktree tools for file review and merging.
+The official v2 server is the compatibility boundary, not the archived Python Wire API. Ephemeral per-session MCP and tool-policy overlays use authenticated SDK service endpoints and are tested against the pinned published CLI. Upstream upgrades require the contract tests before changing the pin. The shared desktop composer currently exposes image input; it does not expose Kimi's video uploader. Terminal-specific interactive widgets and operating Kimi's own terminal UI are outside the desktop integration. Native undo does not promise filesystem rollback; use Duet's Git/worktree tools for file review and merging.
 
 ## Verification
 
