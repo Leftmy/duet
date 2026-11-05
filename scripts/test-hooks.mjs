@@ -6,6 +6,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { findGit, installHooks } from './install-hooks.mjs';
 
+function canonicalDirectory(directory) {
+  // Windows TEMP may use 8.3 names while Git Bash prints the long path.
+  const real = fs.realpathSync.native(directory);
+  return process.platform === 'win32' ? real.toLowerCase() : real;
+}
+
 test('installed pre-commit verifies from the repository root and blocks failed checks', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'duet-hook-test-'));
   try {
@@ -58,7 +64,7 @@ test('installed pre-commit verifies from the repository root and blocks failed c
     assert.equal(lines.length, 4, 'verification must run once for each attempted commit');
     for (const offset of [0, 2]) {
       const normalized = lines[offset].replace(/^\/([a-z])\//i, '$1:/').replaceAll('\\', '/');
-      assert.equal(normalized.toLowerCase(), root.replaceAll('\\', '/').toLowerCase());
+      assert.equal(canonicalDirectory(normalized), canonicalDirectory(root));
       assert.equal(lines[offset + 1], 'run verify');
     }
     fs.writeFileSync(path.join(root, 'change.txt'), 'trailing whitespace \n');
