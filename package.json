@@ -8,6 +8,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "node scripts/install-hooks.mjs",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "verify": "npm run test:hooks && npm run typecheck && npm run test:markdown && npm run test:chat && npm run test:paste && npm run test:native-bridge && npm run test:ui && npm run test:native-ownership && npm run build",
+    "test:hooks": "node --test scripts/test-hooks.mjs",
     "dev": "node scripts/native.mjs dev",
     "build": "vite build",
     "start": "node scripts/native.mjs start",

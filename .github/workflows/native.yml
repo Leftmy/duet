@@ -28,18 +28,11 @@ jobs:
       - run: npm ci
       - name: Prepare bundled native CLI
         run: node --input-type=module -e "import { prepareRuntime } from './scripts/prepare-native.mjs'; await prepareRuntime();"
-      - run: npm run typecheck
-      - run: npm run test:markdown
-      - run: npm run test:chat
-      - run: npm run test:paste
-      - run: npm run test:native-bridge
-      - run: npm run test:ui
-      - run: npm run test:native-ownership
+      - run: npm run verify
       - run: cargo test --locked --lib --manifest-path src-tauri/Cargo.toml
       - run: cargo build --locked --manifest-path src-tauri/Cargo.toml --examples
       - run: npm run test:kimi-published
       - run: npm run test:rust-core
-      - run: npm run build
       - name: Compile native shell
         run: cargo build --locked --manifest-path src-tauri/Cargo.toml
       - name: WebView2 integration
