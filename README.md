@@ -270,6 +270,17 @@ Context for an agent switch is read separately from disk with an explicit text b
 
 ### Tests
 
+`npm ci` / `npm install` installs the tracked `.githooks/pre-commit` hook through
+the `prepare` script. It runs `npm run verify` before each commit and rejects the
+commit if verification fails. Run `npm run hooks:install` to reinstall the hook
+in an existing checkout (including after installing with `--ignore-scripts`).
+
+`npm run verify` runs the hook regression tests, TypeScript checks, Markdown,
+chat, paste, native bridge, renderer load and IPC ownership tests, then builds
+the frontend. It needs Node/npm and installed dependencies. Rust subprocess,
+published-provider and platform WebView checks remain separate as listed below
+and in `.github/workflows/native.yml`.
+
 ```bash
 npm run typecheck
 npm run test:chat                                    # chat lifecycle

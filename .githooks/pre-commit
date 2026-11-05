@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+git diff --cached --check
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "Duet verification requires npm on PATH. Install Node.js and run npm ci." >&2
+  exit 1
+fi
+
+exec npm run verify

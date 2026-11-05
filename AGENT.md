@@ -132,9 +132,16 @@ For releases, keep versions in `package.json`, `src-tauri/Cargo.toml` and
 
 ## Verification
 
-Choose checks based on the change; CI is the full platform validation reference.
-Documentation-only changes need link/path and whitespace checks rather than a
-native rebuild. Report commands actually run and any unavailable prerequisites.
+`npm ci` / `npm install` enables `.githooks/pre-commit` through the `prepare`
+script. Existing checkouts can enable it with `npm run hooks:install`. The hook
+checks staged whitespace and runs `npm run verify`; any failed check blocks the
+commit. Verification includes hook regression tests, typechecking, Markdown,
+chat, paste, bridge, UI and ownership checks, then the frontend build.
+
+Choose additional checks based on the change; CI is the full platform validation
+reference. Documentation-only changes also need link/path checks. Rust/native
+checks remain separate from the local hook. Report commands actually run and
+any unavailable prerequisites.
 
 | Change | Relevant checks |
 | --- | --- |
