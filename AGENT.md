@@ -137,6 +137,8 @@ script. Existing checkouts can enable it with `npm run hooks:install`. The hook
 checks staged whitespace and runs `npm run verify`; any failed check blocks the
 commit. Verification includes hook regression tests, typechecking, Markdown,
 chat, paste, bridge, UI and ownership checks, then the frontend build.
+Hook tests compare canonical directory paths because Windows temporary paths
+can use 8.3 names while Git Bash prints their full names.
 
 Choose additional checks based on the change; CI is the full platform validation
 reference. Documentation-only changes also need link/path checks. Rust/native
