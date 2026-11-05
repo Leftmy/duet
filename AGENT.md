@@ -139,6 +139,8 @@ commit. Verification includes hook regression tests, typechecking, Markdown,
 chat, paste, bridge, UI and ownership checks, then the frontend build.
 Hook tests compare canonical directory paths because Windows temporary paths
 can use 8.3 names while Git Bash prints their full names.
+Rust subprocess tests use the compiled test binary as a child fixture so Unicode
+capture does not depend on cold PowerShell startup within the test deadline.
 
 Choose additional checks based on the change; CI is the full platform validation
 reference. Documentation-only changes also need link/path checks. Rust/native

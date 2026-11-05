@@ -352,50 +352,58 @@ pub fn resolve(name: &str) -> Option<Program> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture(mode: &str) -> Program {
+        // Use a native child so cold shell startup is not part of the test deadline.
+        let mut program = Program::new(std::env::current_exe().unwrap());
+        program.prefix = vec![
+            "--exact".into(),
+            "core::process::tests::process_fixture".into(),
+            "--ignored".into(),
+            "--nocapture".into(),
+        ];
+        program
+            .env
+            .push(("DUET_PROCESS_FIXTURE_MODE".into(), mode.into()));
+        program
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture invoked by the process test"]
+    fn process_fixture() {
+        match std::env::var("DUET_PROCESS_FIXTURE_MODE").as_deref() {
+            Ok("unicode") => std::io::stdout().write_all("Привет".as_bytes()).unwrap(),
+            Ok("sleep") => thread::sleep(Duration::from_secs(5)),
+            _ => panic!("Unknown process fixture mode"),
+        }
+    }
+
     #[test]
     fn captures_unicode_without_a_shell_and_enforces_timeout() {
-        let program = if cfg!(windows) {
-            Program::new("powershell.exe")
-        } else {
-            Program::new("/bin/sh")
-        };
-        let args: Vec<String> = if cfg!(windows) {
-            vec![
-                "-NoProfile",
-                "-Command",
-                "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Write-Output 'Привет'",
-            ]
-        } else {
-            vec!["-c", "printf 'Привет'"]
-        }
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
         assert!(
-            run(&program, &args, None, None, Duration::from_secs(10), 4096)
-                .unwrap()
-                .text()
-                .unwrap()
-                .contains("Привет")
+            run(
+                &fixture("unicode"),
+                &[],
+                None,
+                None,
+                Duration::from_secs(10),
+                4096
+            )
+            .unwrap()
+            .text()
+            .unwrap()
+            .contains("Привет")
         );
-        let args: Vec<String> = if cfg!(windows) {
-            vec!["-NoProfile", "-Command", "Start-Sleep -Seconds 5"]
-        } else {
-            vec!["-c", "sleep 5"]
-        }
-        .into_iter()
-        .map(str::to_owned)
-        .collect();
-        assert!(run(
-            &program,
-            &args,
+        let error = run(
+            &fixture("sleep"),
+            &[],
             None,
             None,
             Duration::from_millis(100),
             4096
         )
         .err()
-        .unwrap()
-        .contains("timed out"));
+        .unwrap();
+        assert_eq!(error, "Command timed out");
     }
 }
